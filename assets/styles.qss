@@ -212,3 +212,27 @@ QTextEdit#log_console {
     background-color: #ff5555 !important;
     color: white !important;
 }
+
+#AddButton {
+    background-color: #00d4ff;
+    color: #000;
+    font-weight: bold;
+    padding: 8px 15px;
+    border-radius: 15px;
+}
+
+#AddButton:hover {
+    background-color: #008fb3;
+}
+
+/* Estilos del Diálogo */
+#CustomDialog {
+    background-color: #1a1a1a;
+}
+
+#CustomDialog QLineEdit, #CustomDialog QTextEdit {
+    background-color: #252525;
+    border: 1px solid #333;
+    color: white;
+    padding: 8px;
+}
