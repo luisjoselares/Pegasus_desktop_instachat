@@ -1,118 +1,85 @@
-import os
-import qtawesome as qta
+import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QPushButton, QStackedWidget, QLabel, QFrame)
-from PyQt6.QtCore import Qt, QSize
-from views.accounts_page import AccountsPage
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
+
+# Importación de tus nuevos módulos
+from views.instagram_accounts_page import InstagramAccountsPage
+from controllers.instagram_controller import InstagramController
+from services.database_service import LocalDBService
 
 class MainWindow(QMainWindow):
-    def __init__(self, cliente_data, hwid):
+    # Se agregan argumentos opcionales para evitar el error de "positional arguments"
+    def __init__(self, controller=None, user_data=None):
         super().__init__()
-        self.setObjectName("MainWindow")
-        self.cliente_data = cliente_data
-        self.hwid = hwid
         
-        # Título dinámico con el nombre del cliente
-        nombre_cliente = cliente_data.get('nombre_completo', 'Usuario')
-        self.setWindowTitle(f"Pegasus ERP - {nombre_cliente}")
-        self.setMinimumSize(1100, 750)
+        # Guardamos las referencias del sistema original
+        self.main_controller = controller
+        self.user_data = user_data
+        
+        self.setWindowTitle("Pegasus Desktop - Instagram Chat")
+        self.resize(1100, 700)
+        
+        # 1. Inicializar Servicios y Controladores del módulo de Instagram
+        self.db_service = LocalDBService()
+        self.insta_controller = InstagramController(self.db_service)
+        
+        # 2. Configurar Interfaz Principal
+        self.main_widget = QWidget()
+        self.setCentralWidget(self.main_widget)
+        self.layout_principal = QHBoxLayout(self.main_widget)
+        self.layout_principal.setContentsMargins(0, 0, 0, 0)
+        self.layout_principal.setSpacing(0)
 
-        # Layout Principal (Horizontal: Sidebar + Contenido)
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        # 3. Sidebar (Navegación)
+        self.setup_sidebar()
 
-        # --- 1. SIDEBAR ---
+        # 4. Contenedor de Páginas (Stacked Widget)
+        self.pages_container = QStackedWidget()
+        
+        # --- Instanciar Páginas ---
+        # Aquí puedes poner tu vista de Dashboard actual si la tienes
+        self.home_page = QWidget() 
+        layout_home = QVBoxLayout(self.home_page)
+        layout_home.addWidget(QLabel("<h1>Bienvenido a Pegasus</h1>"), alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Nueva página de cuentas de Instagram
+        self.accounts_page = InstagramAccountsPage(self.insta_controller)
+        
+        # Conectar el controlador con su vista para refrescar datos
+        self.insta_controller.set_view(self.accounts_page)
+        
+        # Añadir páginas al stack
+        self.pages_container.addWidget(self.home_page)      # Índice 0
+        self.pages_container.addWidget(self.accounts_page)  # Índice 1
+        
+        self.layout_principal.addWidget(self.pages_container)
+
+    def setup_sidebar(self):
         self.sidebar = QFrame()
-        self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(240)
-        self.init_sidebar()
-        main_layout.addWidget(self.sidebar)
+        self.sidebar.setObjectName("Sidebar")
+        self.sidebar.setFixedWidth(200)
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.sidebar_layout.setSpacing(10)
 
-        # --- 2. ÁREA DE CONTENIDO (PÁGINAS) ---
-        self.content_area = QStackedWidget()
-        self.content_area.setObjectName("content_area")
-        
-        # Inicialización de Páginas
-        self.page_accounts = AccountsPage(self.hwid)
-        # Aquí podrías inicializar las otras páginas cuando las tengas:
-        # self.page_bot = BotManagerPage() 
-        # self.page_logs = LogsPage()
-
-        self.content_area.addWidget(self.page_accounts) # Índice 0
-        
-        main_layout.addWidget(self.content_area)
-
-        # Conectar botones a la navegación
-        self.btn_acc.clicked.connect(lambda: self.cambiar_pagina(0, self.btn_acc))
-        # self.btn_bot.clicked.connect(lambda: self.cambiar_pagina(1, self.btn_bot))
-        # self.btn_log.clicked.connect(lambda: self.cambiar_pagina(2, self.btn_log))
-
-    def init_sidebar(self):
-        layout = QVBoxLayout(self.sidebar)
-        layout.setContentsMargins(0, 40, 0, 20) # Margen 0 a los lados para el border-left del CSS
-        layout.setSpacing(5)
-
-        # Header Sidebar
+        # Logo / Título
         lbl_logo = QLabel("PEGASUS")
-        lbl_logo.setStyleSheet("font-size: 28px; font-weight: bold; color: #00E5FF; padding-left: 25px;")
-        layout.addWidget(lbl_logo)
-        
-        lbl_ver = QLabel("SISTEMA DE AUTOMATIZACIÓN")
-        lbl_ver.setStyleSheet("color: #555; font-size: 9px; letter-spacing: 1px; padding-left: 25px; margin-bottom: 40px;")
-        layout.addWidget(lbl_ver)
+        lbl_logo.setObjectName("SidebarLogo")
+        lbl_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_logo.setStyleSheet("font-size: 20px; font-weight: bold; color: #00d4ff; margin: 20px 0;")
+        self.sidebar_layout.addWidget(lbl_logo)
 
-        # Botones de Navegación con QtAwesome
-        # Usamos el prefijo 'fa5s' para FontAwesome 5 Solid
-        self.btn_acc = self.crear_nav_btn("Cuentas Instagram", "fa5s.users", True)
-        self.btn_bot = self.crear_nav_btn("Bot Manager", "fa5s.robot", False)
-        self.btn_log = self.crear_nav_btn("Historial / Logs", "fa5s.clipboard-list", False)
+        # Botones de Navegación
+        self.btn_home = QPushButton(" Inicio")
+        self.btn_home.setHeight = 45
+        self.btn_home.clicked.connect(lambda: self.pages_container.setCurrentIndex(0))
         
-        layout.addWidget(self.btn_acc)
-        layout.addWidget(self.btn_bot)
-        layout.addWidget(self.btn_log)
+        self.btn_accounts = QPushButton(" Cuentas IG")
+        self.btn_accounts.clicked.connect(lambda: self.pages_container.setCurrentIndex(1))
 
-        layout.addStretch()
-
-        # Footer Sidebar: Info del Usuario
-        user_container = QFrame()
-        user_container.setStyleSheet("background-color: #151515; border-top: 1px solid #252525; padding: 15px;")
-        user_layout = QVBoxLayout(user_container)
+        self.sidebar_layout.addWidget(self.btn_home)
+        self.sidebar_layout.addWidget(self.btn_accounts)
         
-        primer_nombre = self.cliente_data['nombre_completo'].split()[0]
-        user_info = QLabel(f"Conectado como:\n{primer_nombre}")
-        user_info.setStyleSheet("color: #00E5FF; font-size: 11px; border: none;")
-        user_layout.addWidget(user_info)
-
-        self.btn_logout = QPushButton(" SALIR")
-        self.btn_logout.setIcon(qta.icon("fa5s.sign-out-alt", color="#FF5252"))
-        self.btn_logout.setObjectName("logout_btn")
-        self.btn_logout.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_logout.clicked.connect(self.close)
-        user_layout.addWidget(self.btn_logout)
-        
-        layout.addWidget(user_container)
-
-    def crear_nav_btn(self, texto, icon_name, activo):
-        # Creamos el icono con el color cian corporativo de Pegasus
-        icon = qta.icon(icon_name, color="#BBBBBB", color_active="#00E5FF")
-        
-        btn = QPushButton(texto)
-        btn.setObjectName("nav_btn")
-        btn.setIcon(icon)
-        btn.setIconSize(QSize(18, 18))
-        btn.setCheckable(True)
-        btn.setAutoExclusive(True) # Solo uno puede estar marcado a la vez
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setFixedHeight(50)
-        
-        if activo:
-            btn.setChecked(True)
-        
-        return btn
-
-    def cambiar_pagina(self, index, boton_activo):
-        self.content_area.setCurrentIndex(index)
-        # El resto de botones se desmarcan solos gracias a setAutoExclusive(True)
+        self.layout_principal.addWidget(self.sidebar)

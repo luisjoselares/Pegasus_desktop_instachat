@@ -146,3 +146,69 @@ QTextEdit#log_console {
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 12px;
 }
+
+/* --- Estilos para el Módulo de Cuentas (Acordeón) --- */
+
+#AccountCard {
+    background-color: #2b2b2b;
+    border: 1px solid #3d3d3d;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+#AccountCard QPushButton {
+    background-color: transparent;
+    border: none;
+    color: #ffffff;
+    text-align: left;
+    padding: 15px;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#AccountCard QPushButton:hover {
+    background-color: #3d3d3d;
+    color: #00d4ff; /* Acento Cian */
+}
+
+#AccountCard QFrame {
+    background-color: #212121;
+    border-top: 1px solid #3d3d3d;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+#AccountCard QLabel {
+    color: #aaaaaa;
+    font-size: 11px;
+    text-transform: uppercase;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+#AccountCard QLineEdit, #AccountCard QTextEdit {
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
+    border-radius: 4px;
+    color: #e0e0e0;
+    padding: 8px;
+}
+
+#AccountCard QLineEdit:focus, #AccountCard QTextEdit:focus {
+    border: 1px solid #00d4ff;
+}
+
+/* Botón de Eliminar con estilo de advertencia */
+#DeleteBtn {
+    background-color: #442222 !important;
+    color: #ff5555 !important;
+    border: 1px solid #663333 !important;
+    border-radius: 4px;
+    padding: 8px !important;
+    font-weight: normal !important;
+}
+
+#DeleteBtn:hover {
+    background-color: #ff5555 !important;
+    color: white !important;
+}

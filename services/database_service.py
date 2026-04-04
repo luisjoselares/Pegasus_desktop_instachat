@@ -2,31 +2,38 @@ import sqlite3
 
 class LocalDBService:
     def __init__(self):
-        self.db_name = "monitor_pegasus.db"
+        # 1. Usar el nombre correcto del archivo que subiste
+        self.db_name = "pegasus_bot.db" 
         self._create_table()
 
+    def _get_connection(self):
+        return sqlite3.connect(self.db_name)
+
     def _create_table(self):
-        with sqlite3.connect(self.db_name) as conn:
+        with self._get_connection() as conn:
+            # Aseguramos que la tabla settings exista con la estructura de tu DB
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS cuentas_ig (
+                CREATE TABLE IF NOT EXISTS settings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    usuario TEXT NOT NULL,
-                    password_enc TEXT NOT NULL,
-                    proxy TEXT,
-                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    insta_user TEXT,
+                    insta_pass TEXT,
+                    groq_api_key TEXT,
+                    system_prompt TEXT DEFAULT ''
                 )
             """)
 
-    def agregar_cuenta(self, usuario, password_enc, proxy=""):
-        with sqlite3.connect(self.db_name) as conn:
-            conn.execute("INSERT INTO cuentas_ig (usuario, password_enc, proxy) VALUES (?, ?, ?)",
-                         (usuario, password_enc, proxy))
-
     def obtener_cuentas(self):
-        with sqlite3.connect(self.db_name) as conn:
-            # Traemos todos los campos incluyendo el proxy
-            return conn.execute("SELECT id, usuario, password_enc, proxy FROM cuentas_ig").fetchall()
+        with self._get_connection() as conn:
+            # Seleccionamos las columnas EXACTAS que tiene pegasus_bot.db
+            cursor = conn.execute("SELECT id, insta_user, insta_pass, groq_api_key, system_prompt FROM settings")
+            return cursor.fetchall()
+
+    def actualizar_contexto(self, account_id, prompt):
+        # Este es el método que tu controlador estaba pidiendo
+        with self._get_connection() as conn:
+            conn.execute("UPDATE settings SET system_prompt = ? WHERE id = ?", (prompt, account_id))
+            conn.commit()
 
     def eliminar_cuenta(self, id_cuenta):
-        with sqlite3.connect(self.db_name) as conn:
-            conn.execute("DELETE FROM cuentas_ig WHERE id = ?", (id_cuenta,))
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM settings WHERE id = ?", (id_cuenta,))
