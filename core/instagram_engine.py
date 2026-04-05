@@ -26,7 +26,7 @@ class InstagramService:
     def __init__(self):
         self.cl = Client()
         self.ai = AIService()
-        self.ai.set_trial_status_callback(lambda restantes: self._ui_log(f"[TRIAL] Mensajes restantes: {restantes}"))
+        self.ai.set_trial_status_callback(self._on_trial_status)
         self.is_running = False
         self.session_file = None
         self.log_callback = None
@@ -71,6 +71,14 @@ class InstagramService:
         logging.info(mensaje)
         if self.log_callback:
             self.log_callback(mensaje)
+
+    def _on_trial_status(self, restantes):
+        if isinstance(restantes, dict):
+            mensajes = restantes.get('mensajes', 'N/A')
+            tokens = restantes.get('tokens', 'N/A')
+            self._ui_log(f"[TRIAL] Mensajes restantes: {mensajes} | Tokens restantes: {tokens}")
+        else:
+            self._ui_log(f"[TRIAL] Mensajes restantes: {restantes}")
 
     def _parse_time_string(self, value):
         if not value:
@@ -144,9 +152,16 @@ class InstagramService:
         return False
 
     def _pause_thread(self, thread_id, username=None):
-        db.pause_thread(thread_id, minutes=720, cliente_id=self.cliente_id)
-        self.muted_threads[thread_id] = datetime.now().isoformat(sep=' ')
-        self._ui_log(f"[HANDOFF] Hilo {thread_id} silenciado durante 12h.")
+        ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        with db.get_connection() as conn:
+            conn.execute(
+                "INSERT INTO chat_status (thread_id, cliente_id, status, last_manual_at) VALUES (?, ?, 'PAUSED', ?) "
+                "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status='PAUSED', last_manual_at=excluded.last_manual_at",
+                (thread_id, self.cliente_id, ahora)
+            )
+            conn.commit()
+        self.muted_threads[thread_id] = ahora
+        self._ui_log(f"[HANDOFF] Hilo {thread_id} silenciado mientras el humano participa.")
 
     def _reactivate_thread(self, thread_id):
         with db.get_connection() as conn:
@@ -163,10 +178,20 @@ class InstagramService:
         self._last_rescue_check = ahora
 
         with db.get_connection() as conn:
-            cursor = conn.execute("SELECT thread_id FROM chat_status WHERE status = 'PAUSED'")
-            paused_threads = [row['thread_id'] for row in cursor.fetchall()]
+            if self.cliente_id is not None:
+                cursor = conn.execute(
+                    "SELECT thread_id, last_manual_at, paused_until FROM chat_status WHERE status = 'PAUSED' AND cliente_id = ?",
+                    (self.cliente_id,)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT thread_id, last_manual_at, paused_until FROM chat_status WHERE status = 'PAUSED'"
+                )
+            paused_rows = cursor.fetchall()
 
-        for thread_id in paused_threads:
+        for row in paused_rows:
+            thread_id = row['thread_id']
+            last_manual_at = row.get('last_manual_at')
             try:
                 thread_fetcher = getattr(self.cl, 'direct_thread', None)
                 thread = self.cl.direct_thread(thread_id) if callable(thread_fetcher) else None
@@ -185,9 +210,22 @@ class InstagramService:
                 if not timestamp:
                     continue
 
-                if (ahora - timestamp) > timedelta(minutes=15):
+                human_inactive = False
+                if last_manual_at:
+                    try:
+                        manual_ts = datetime.fromisoformat(last_manual_at)
+                        if (ahora - manual_ts) > timedelta(minutes=10):
+                            human_inactive = True
+                    except Exception:
+                        pass
+
+                if not human_inactive and sender_id != str(self.cl.user_id):
+                    if (ahora - timestamp) > timedelta(minutes=10):
+                        human_inactive = True
+
+                if human_inactive:
                     username = thread.users[0].username if getattr(thread, 'users', None) else 'desconocido'
-                    self._ui_log(f"[RESCATE] Inactividad humana detectada (>15 min). Bot reactivado para el chat con @{username}.")
+                    self._ui_log(f"[RESCATE] Inactividad humana detectada (>10 min). Bot reactivado para el chat con @{username}.")
                     self._reactivate_thread(thread_id)
                     self.muted_threads.pop(thread_id, None)
                     if self.rescue_callback:
@@ -425,7 +463,7 @@ class InstagramService:
                         self._ui_log("⏳ Simulando escritura natural...")
                         if account_id:
                             self._update_account_log(account_id, "⏳ Simulando escritura natural...")
-                        time.sleep(random.uniform(30, 90))
+                        time.sleep(random.uniform(20, 45))
 
                         user_text = getattr(last_msg, 'text', '') or getattr(last_msg, 'message', '') or ''
                         if not user_text:
@@ -456,7 +494,11 @@ class InstagramService:
                         message_id = getattr(sent, 'id', None) or getattr(sent, 'message_id', None) or self._get_message_id(sent)
                         if message_id:
                             self._add_sent_message(message_id)
-                        self.cl.direct_thread_mark_seen(thread.id)
+                        if hasattr(self.cl, 'direct_send_seen'):
+                            self.cl.direct_send_seen(thread.id)
+                        elif hasattr(self.cl, 'direct_thread_mark_unread'):
+                            # Si el cliente no soporta marcar como visto directamente, omitimos.
+                            pass
                         self._ui_log(f"🤖 Respuesta enviada a @{username} en hilo {thread.id}.")
                         if account_id:
                             self._update_account_log(account_id, f"🤖 Respuesta enviada a @{username}.")
@@ -518,8 +560,8 @@ class InstagramService:
                     conn.commit()
                     return False
                 except Exception:
-                    return row['status'] == 'PAUSED'
-            return row['status'] == 'PAUSED'
+                    return row['status'] in ('PAUSED', 'MANUAL')
+            return row['status'] in ('PAUSED', 'MANUAL')
 
     def _check_panic_keywords(self, text):
         if not text: return False

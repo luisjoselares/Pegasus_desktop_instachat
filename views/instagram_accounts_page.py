@@ -262,14 +262,15 @@ class AccountCard(QFrame):
 
         is_manual = bool(toggle_btn.property("manual"))
         if is_manual:
+            self.controller.toggle_manual_thread(thread_id, enable=False)
             toggle_btn.setIcon(qta.icon('fa5s.hand-paper', color='#CCCCCC'))
             toggle_btn.setToolTip("Pausar bot para este cliente")
             toggle_btn.setProperty("manual", False)
             toggle_btn.setProperty("muted_at", None)
             status_label.setText("🤖 Gestionado por IA")
             status_label.setStyleSheet("color: #CCCCCC; font-size: 11px;")
-            # TODO: Notificar al controller/engine para añadir/remover thread_id de la MuteList.
         else:
+            self.controller.toggle_manual_thread(thread_id, enable=True)
             toggle_btn.setIcon(qta.icon('fa5s.play', color='#00E5FF'))
             toggle_btn.setToolTip("Reactivar bot")
             toggle_btn.setProperty("manual", True)
@@ -280,7 +281,6 @@ class AccountCard(QFrame):
                 "(<span style=\"color:#BBBBBB; font-size:10px;\">Auto-reactivación en 12h</span>)"
             )
             status_label.setStyleSheet("color: #FFA500; font-size: 11px;")
-            # TODO para instagram_engine.py: Al leer 'muted_threads', verificar si datetime.now() - timestamp > 12 horas. Si es True, remover de la lista y reactivar bot.
 
     def delete_account(self):
         confirm = QMessageBox.question(
@@ -376,7 +376,7 @@ class InstagramAccountsPage(QWidget):
         self.main_layout.addWidget(self.scroll)
 
     def _account_limit_reached(self):
-        accounts = self.controller.db.obtener_cuentas()
+        accounts = self.controller.db.obtener_cuentas(self.controller.cliente_id)
         return len(accounts) >= 1
 
     def open_add_dialog(self):

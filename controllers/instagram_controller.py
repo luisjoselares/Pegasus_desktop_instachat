@@ -86,6 +86,16 @@ class InstagramController:
             else:
                 self.main_controller.detener_bot()
 
+    def toggle_manual_thread(self, thread_id, enable):
+        if not thread_id:
+            return
+        if enable:
+            self.db.pause_thread(thread_id, minutes=720, cliente_id=self.cliente_id, status='MANUAL')
+            print(f"Controlador: Hilo {thread_id} pausado manualmente durante 12h.")
+        else:
+            self.db.update_thread_status(thread_id, status='ACTIVE', cliente_id=self.cliente_id)
+            print(f"Controlador: Hilo {thread_id} reactivado manualmente.")
+
     def get_conversation_history(self, thread_id):
         if not thread_id:
             return []

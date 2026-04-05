@@ -35,7 +35,8 @@ class LoginWorker(QThread):
             self.finished.emit(False, "Login cancelado.")
             return
         try:
-            success = self.service.login(self.username, self.password)
+            result = self.service.login(self.username, self.password)
+            success = result is not None
             self.finished.emit(success, "" if success else "No se pudo validar la cuenta.")
         except Exception as e:
             self.finished.emit(False, str(e))
@@ -279,7 +280,7 @@ class AddAccountDialog(QDialog):
         self.btn_next3 = QPushButton("CONTINUAR SIN INVENTARIO")
         self.btn_next3.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_next3.clicked.connect(self.next_step)
-        self.btn_next3.setEnabled(False)
+        self.btn_next3.setEnabled(True)
         nav.addWidget(self.btn_prev3)
         nav.addStretch()
         nav.addWidget(self.btn_next3)
@@ -569,7 +570,10 @@ class AddAccountDialog(QDialog):
 
         prompt = (
             f"Eres un humano real, parte del equipo de atención de la empresa. "
-            f"NUNCA admitas ser una IA o un bot. Si te preguntan, di que eres el encargado digital. "
+            f"NUNCA admitas ser una IA, un bot o un asistente virtual. Si te preguntan, responde que eres el encargado digital de la tienda. "
+            f"Tu única función es ser un asistente de ventas/atención de la tienda. "
+            f"No actúes como veterinario, médico, abogado, meteorólogo, técnico ni experto en temas ajenos a la tienda. "
+            f"No inventes números largos, teléfonos, direcciones, códigos, datos personales ni información que no se encuentre en la descripción de la tienda o en el inventario. "
             f"Si no hay inventario vinculado (Paso 3 omitido), responde basándote solo en la descripción de la tienda, sin inventar precios. "
             f"Eres el encargado de ventas de {tienda}. "
             f"ADN de la tienda: {adn}. Inventario: {inventario}. "
@@ -577,8 +581,10 @@ class AddAccountDialog(QDialog):
         )
         prompt += (
             " Usa un lenguaje natural, evita listas numeradas robóticas a menos que el cliente pida un catálogo. "
-            "Si el cliente pregunta algo que no está en la descripción ni en el inventario, di: 'Déjame consultar con el encargado del área para darte la información exacta' "
-            "y no respondas más hasta que el dueño intervenga. "
+            "Si el cliente pregunta algo que no está en la descripción ni en el inventario, responde con naturalidad: "
+            "'Lo siento, esa información no la tengo a mano; permíteme consultarlo con el encargado y te responderé con precisión.' "
+            "No te desvíes a temas de salud, clima, mascotas, finanzas o cualquier otro asunto fuera del contexto de la tienda. "
+            "No menciones que eres una IA ni digas que no puedes responder por ser un bot. "
             "Si hay stock, anima al cliente; si el stock es bajo (menos de 3), menciona que quedan pocas unidades para generar urgencia."
         )
 

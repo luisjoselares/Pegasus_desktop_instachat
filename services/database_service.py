@@ -220,6 +220,12 @@ class LocalDBService:
             conn.execute("DELETE FROM settings WHERE id = ?", (account_id,))
             conn.commit()
 
+    def limpiar_cuentas_huerfanas(self, cliente_id=None):
+        """Elimina cuentas locales sin cliente válido o sin cliente_id asignado."""
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM settings WHERE cliente_id IS NULL OR cliente_id = ''")
+            conn.commit()
+
     def update_session_data(self, username, session_data, cliente_id=None):
         with self.get_connection() as conn:
             if cliente_id is not None:
@@ -276,37 +282,51 @@ class LocalDBService:
                 )
             conn.commit()
 
-    def pause_thread(self, thread_id, minutes=60, cliente_id=None):
+    def pause_thread(self, thread_id, minutes=60, cliente_id=None, status='PAUSED'):
         until = (datetime.now() + timedelta(minutes=minutes)).isoformat(sep=' ')
         with self.get_connection() as conn:
             if cliente_id is not None:
                 conn.execute(
-                    "INSERT INTO chat_status (thread_id, cliente_id, status, paused_until) VALUES (?, ?, 'PAUSED', ?) "
-                    "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status='PAUSED', paused_until = excluded.paused_until",
-                    (thread_id, cliente_id, until)
+                    "INSERT INTO chat_status (thread_id, cliente_id, status, paused_until) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status = excluded.status, paused_until = excluded.paused_until",
+                    (thread_id, cliente_id, status, until)
                 )
             else:
                 conn.execute(
-                    "INSERT INTO chat_status (thread_id, status, paused_until) VALUES (?, 'PAUSED', ?) "
-                    "ON CONFLICT(thread_id) DO UPDATE SET status='PAUSED', paused_until = excluded.paused_until",
-                    (thread_id, until)
+                    "INSERT INTO chat_status (thread_id, status, paused_until) VALUES (?, ?, ?) "
+                    "ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status, paused_until = excluded.paused_until",
+                    (thread_id, status, until)
                 )
             conn.commit()
 
     def update_thread_status(self, thread_id, status='ACTIVE', cliente_id=None):
         with self.get_connection() as conn:
             if cliente_id is not None:
-                conn.execute(
-                    "INSERT INTO chat_status (thread_id, cliente_id, status) VALUES (?, ?, ?) "
-                    "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status = excluded.status",
-                    (thread_id, cliente_id, status)
-                )
+                if status == 'ACTIVE':
+                    conn.execute(
+                        "INSERT INTO chat_status (thread_id, cliente_id, status, paused_until) VALUES (?, ?, ?, NULL) "
+                        "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status = excluded.status, paused_until = NULL",
+                        (thread_id, cliente_id, status)
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO chat_status (thread_id, cliente_id, status) VALUES (?, ?, ?) "
+                        "ON CONFLICT(thread_id) DO UPDATE SET cliente_id = excluded.cliente_id, status = excluded.status",
+                        (thread_id, cliente_id, status)
+                    )
             else:
-                conn.execute(
-                    "INSERT INTO chat_status (thread_id, status) VALUES (?, ?) "
-                    "ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status",
-                    (thread_id, status)
-                )
+                if status == 'ACTIVE':
+                    conn.execute(
+                        "INSERT INTO chat_status (thread_id, status, paused_until) VALUES (?, ?, NULL) "
+                        "ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status, paused_until = NULL",
+                        (thread_id, status)
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO chat_status (thread_id, status) VALUES (?, ?) "
+                        "ON CONFLICT(thread_id) DO UPDATE SET status = excluded.status",
+                        (thread_id, status)
+                    )
             conn.commit()
 
 db = LocalDBService()

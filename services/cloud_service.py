@@ -121,7 +121,7 @@ def registrar_nuevo_usuario(datos_usuario, hwid, app_id, expiracion_codigo):
         else:
             estado_licencia = "TRIAL"
             mensajes_trial = 10
-            fecha_vencimiento_default = (datetime.now() + timedelta(days=365)).date().isoformat()
+            fecha_vencimiento_default = None
 
         cliente_payload = {
             "nombre_completo": datos_usuario.get("nombre"),
@@ -179,12 +179,12 @@ def registrar_nuevo_usuario(datos_usuario, hwid, app_id, expiracion_codigo):
         return {"exito": False, "mensaje": f"Error de servidor: {mensaje_error}"}
 
 
-def descontar_mensaje_trial(licencia_id):
+def verificar_trial(licencia_id, token_cost=1):
     if not supabase:
         return {"permitido": False, "mensaje": "Conexión a Supabase no configurada."}
 
     try:
-        response = supabase.table("licencias").select("estado, mensajes_restantes").eq("id", licencia_id).execute()
+        response = supabase.table("licencias").select("*").eq("id", licencia_id).execute()
         data = response.data if hasattr(response, 'data') else None
         if not data or len(data) == 0:
             return {"permitido": False, "mensaje": "Licencia no encontrada."}
@@ -192,25 +192,65 @@ def descontar_mensaje_trial(licencia_id):
         licencia = data[0]
         estado = licencia.get("estado")
         mensajes_restantes = licencia.get("mensajes_restantes")
+        tokens_restantes = licencia.get("tokens_restantes")
+
+        if mensajes_restantes is None:
+            mensajes_restantes = 0
+        if tokens_restantes is None:
+            tokens_restantes = mensajes_restantes
 
         if str(estado).upper() == "ACTIVO":
-            return {"permitido": True, "restantes": "ILIMITADOS"}
+            return {"permitido": True, "restantes": {"mensajes": "ILIMITADOS", "tokens": "ILIMITADOS"}}
 
         if str(estado).upper() == "TRIAL":
-            if mensajes_restantes is None:
-                mensajes_restantes = 0
+            if mensajes_restantes > 0 and tokens_restantes >= token_cost:
+                return {"permitido": True, "restantes": {"mensajes": mensajes_restantes, "tokens": tokens_restantes}}
+            return {"permitido": False, "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."}
 
-            if mensajes_restantes > 0:
-                nuevo_saldo = mensajes_restantes - 1
-                supabase.table("licencias").update({"mensajes_restantes": nuevo_saldo}).eq("id", licencia_id).execute()
-                if nuevo_saldo == 0:
-                    supabase.table("licencias").update({"estado": "TRIAL_AGOTADO"}).eq("id", licencia_id).execute()
-                return {"permitido": True, "restantes": nuevo_saldo}
+        return {"permitido": False, "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."}
+    except Exception as e:
+        return {"permitido": False, "mensaje": f"Error de servidor: {e}"}
+
+
+def descontar_mensaje_trial(licencia_id, token_cost=1):
+    if not supabase:
+        return {"permitido": False, "mensaje": "Conexión a Supabase no configurada."}
+
+    try:
+        response = supabase.table("licencias").select("*").eq("id", licencia_id).execute()
+        data = response.data if hasattr(response, 'data') else None
+        if not data or len(data) == 0:
+            return {"permitido": False, "mensaje": "Licencia no encontrada."}
+
+        licencia = data[0]
+        estado = licencia.get("estado")
+        mensajes_restantes = licencia.get("mensajes_restantes")
+        tokens_restantes = licencia.get("tokens_restantes")
+
+        if mensajes_restantes is None:
+            mensajes_restantes = 0
+        if tokens_restantes is None:
+            tokens_restantes = mensajes_restantes
+
+        if str(estado).upper() == "ACTIVO":
+            return {"permitido": True, "restantes": {"mensajes": "ILIMITADOS", "tokens": "ILIMITADOS"}}
+
+        if str(estado).upper() == "TRIAL":
+            if mensajes_restantes > 0 and tokens_restantes >= token_cost:
+                nuevo_mensajes = max(0, mensajes_restantes - 1)
+                nuevo_tokens = max(0, tokens_restantes - token_cost)
+                update_payload = {"mensajes_restantes": nuevo_mensajes}
+                if "tokens_restantes" in licencia:
+                    update_payload["tokens_restantes"] = nuevo_tokens
+                if nuevo_mensajes == 0 or nuevo_tokens == 0:
+                    update_payload["estado"] = "TRIAL_AGOTADO"
+                supabase.table("licencias").update(update_payload).eq("id", licencia_id).execute()
+                return {"permitido": True, "restantes": {"mensajes": nuevo_mensajes, "tokens": nuevo_tokens}}
 
             supabase.table("licencias").update({"estado": "TRIAL_AGOTADO"}).eq("id", licencia_id).execute()
-            return {"permitido": False, "mensaje": "Has alcanzado el límite de tu versión de prueba."}
+            return {"permitido": False, "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."}
 
-        return {"permitido": False, "mensaje": "Has alcanzado el límite de tu versión de prueba."}
+        return {"permitido": False, "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."}
     except Exception as e:
         return {"permitido": False, "mensaje": f"Error de servidor: {e}"}
 
@@ -270,6 +310,9 @@ def validar_licencia_cliente(cliente_id, app_id=None, hwid_actual=None):
             return None
 
         def is_expired(lic):
+            estado = str(lic.get("estado", "")).upper()
+            if estado in ["TRIAL", "TRIAL_AGOTADO"]:
+                return False
             fecha = parse_date(lic.get("fecha_vencimiento"))
             return fecha is not None and date.today() > fecha
 
@@ -309,15 +352,18 @@ def validar_licencia_cliente(cliente_id, app_id=None, hwid_actual=None):
                     "mensaje": "Tu suscripción ha vencido."
                 }
         elif estado_normalizado == "TRIAL":
-            if mensajes_restantes <= 0:
+            tokens_restantes = licencia.get("tokens_restantes")
+            if tokens_restantes is None:
+                tokens_restantes = mensajes_restantes
+            if mensajes_restantes <= 0 or tokens_restantes <= 0:
                 return {
                     "valido": False,
-                    "mensaje": "Has agotado tus mensajes de prueba. Por favor, realiza un pago."
+                    "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."
                 }
         elif estado_normalizado == "TRIAL_AGOTADO":
             return {
                 "valido": False,
-                "mensaje": "Has agotado tus mensajes de prueba. Por favor, realiza un pago."
+                "mensaje": "Has agotado tus mensajes o tokens de prueba. Por favor, realiza un pago."
             }
         else:
             return {

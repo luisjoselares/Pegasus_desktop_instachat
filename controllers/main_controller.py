@@ -23,12 +23,13 @@ class BotThread(QThread):
         self.engine.start_polling(self.user, self.pw, skip_login=self.skip_login)
 
 class MainController:
-    def __init__(self, view, cliente_data=None, licencia_data=None, engine=None, cliente_id=None, security_service=None):
+    def __init__(self, view, cliente_data=None, licencia_data=None, engine=None, cliente_id=None, security_service=None, db_service=None):
         self.view = view
         self.engine = engine if engine is not None else InstagramService()
         self.thread = None
         self.cliente_id = cliente_id
         self.security_service = security_service
+        self.db_service = db_service
 
         if licencia_data and hasattr(self.engine, 'set_licencia_id'):
             self.engine.set_licencia_id(licencia_data.get('id'))
@@ -162,7 +163,12 @@ class MainController:
 
     def _on_trial_status(self, restantes):
         if hasattr(self.view, 'log_console'):
-            self.view.log_console.append(f"[TRIAL] Mensajes restantes: {restantes}")
+            if isinstance(restantes, dict):
+                mensajes = restantes.get('mensajes', 'N/A')
+                tokens = restantes.get('tokens', 'N/A')
+                self.view.log_console.append(f"[TRIAL] Mensajes restantes: {mensajes} | Tokens restantes: {tokens}")
+            else:
+                self.view.log_console.append(f"[TRIAL] Mensajes restantes: {restantes}")
 
     def auto_start_if_enabled(self):
         cuentas = db.obtener_cuentas(self.cliente_id)

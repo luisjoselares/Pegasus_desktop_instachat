@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
         
         # 1. Inicializar Servicios
         self.db_service = LocalDBService()
+        self.db_service.limpiar_cuentas_huerfanas(self.current_cliente_id)
         self.shared_engine = InstagramService()
         if self.licencia_data and hasattr(self.shared_engine, 'set_licencia_id'):
             self.shared_engine.set_licencia_id(self.licencia_data.get('id'))
@@ -63,7 +64,8 @@ class MainWindow(QMainWindow):
             licencia_data,
             engine=self.shared_engine,
             cliente_id=self.current_cliente_id,
-            security_service=self.security_service
+            security_service=self.security_service,
+            db_service=self.db_service
         )
         self.insta_controller.set_main_controller(self.main_controller)
 

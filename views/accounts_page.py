@@ -68,7 +68,15 @@ class AccountsPage(QWidget):
 
         # Encriptamos la clave localmente antes de guardar
         pass_enc = self.cipher.encrypt(password)
-        self.db.agregar_cuenta(user, pass_enc, proxy)
+        self.db.agregar_cuenta({
+            'user': user,
+            'pass': pass_enc,
+            'proxy': proxy,
+            'prompt': '',
+            'type': 'Vendedor de tienda',
+            'start': '08:00',
+            'end': '18:00'
+        })
         
         # Limpieza y refresco
         self.txt_user.clear(); self.txt_pass.clear(); self.txt_proxy.clear()
@@ -79,7 +87,11 @@ class AccountsPage(QWidget):
         cuentas = self.db.obtener_cuentas()
         self.tabla.setRowCount(len(cuentas))
         
-        for i, (id_c, user, p_enc, proxy) in enumerate(cuentas):
+        for i, cuenta in enumerate(cuentas):
+            id_c = cuenta.get('id')
+            user = cuenta.get('insta_user', '')
+            proxy = cuenta.get('proxy', '')
+
             # Usuario
             self.tabla.setItem(i, 0, QTableWidgetItem(user))
             
