@@ -1,238 +1,173 @@
-/* --- CONFIGURACIÓN GLOBAL --- */
-QMainWindow, QDialog, 
-QWidget#LoginPage, QWidget#RegisterWizard, QWidget#ForgotPasswordPage,
-QWidget#AccountsPage {
-    background-color: #121212;
+/* ========================================================================
+   1. CONFIGURACIÓN GLOBAL (DEEP DARK)
+   ======================================================================== */
+QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#InstagramAccountsPage, #ModernDialog {
+    background-color: #080808; /* Fondo base ultra oscuro */
     color: #E0E0E0;
-    font-family: 'Segoe UI', 'Roboto', 'Helvetica', sans-serif;
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
 }
 
-QWidget {
-    font-size: 14px;
+/* Títulos de Página (Máximo Contraste) */
+#PageTitle {
+    font-size: 32px;
+    font-weight: 900;
+    color: #FFFFFF;
+    letter-spacing: 1px;
 }
 
-/* --- CAMPOS DE TEXTO (INPUTS) --- */
-QLineEdit {
-    background-color: #1E1E1E;
-    border: 1px solid #333333;
-    border-radius: 8px;
-    padding: 10px;
-    color: white;
+/* ========================================================================
+   2. SIDEBAR (NAVEGACIÓN PROFESIONAL)
+   ======================================================================== */
+#Sidebar {
+    background-color: #0D0D0D;
+    border-right: 1px solid #1A1A1A;
+    min-width: 220px;
 }
 
-QLineEdit:focus {
-    border: 1px solid #00E5FF;
-    background-color: #252525;
-}
-
-/* --- BOTONES CORPORATIVOS (PÚRPURA) --- */
-QPushButton {
-    background-color: #5E35B1; 
-    color: white;
-    border-radius: 8px;
-    padding: 10px 15px;
-    font-weight: bold;
-    border: 1px solid transparent;
-}
-
-QPushButton:hover {
-    background-color: #7E57C2;
-    border: 1px solid #00E5FF;
-}
-
-QPushButton:pressed {
-    background-color: #4527A0;
-}
-
-QPushButton:disabled {
-    background-color: #333333;
-    color: #777777;
-}
-
-/* Botones de Enlace (Login/Registro) */
-QPushButton#link_btn {
-    background: transparent;
+#SidebarLogo {
+    font-size: 24px;
+    font-weight: 900;
+    color: #00E5FF;
+    padding: 40px 0;
+    letter-spacing: 4px;
     border: none;
-    font-weight: normal;
 }
 
-/* --- SIDEBAR (BARRA LATERAL) --- */
-QFrame#sidebar {
-    background-color: #1A1A1A;
-    border-right: 1px solid #2A2A2A;
-}
-
-QPushButton#nav_btn {
+#Sidebar QPushButton {
     background-color: transparent;
     text-align: left;
-    padding-left: 25px;
-    color: #888888;
+    padding: 15px 25px;
+    color: #666;
     border: none;
-    border-radius: 0px;
-    font-weight: normal;
-}
-
-QPushButton#nav_btn:hover {
-    background-color: #252525;
-    color: #00E5FF;
-}
-
-QPushButton#nav_btn:checked {
-    background-color: #252525;
-    color: #00E5FF;
-    border-left: 4px solid #00E5FF;
-    font-weight: bold;
-}
-
-QPushButton#logout_btn {
-    background-color: rgba(211, 47, 47, 0.1);
-    color: #FF5252;
-    border: 1px solid #D32F2F;
-    margin-top: 10px;
-}
-
-QPushButton#logout_btn:hover {
-    background-color: #D32F2F;
-    color: white;
-}
-
-/* --- TABLAS (ADMINISTRADOR DE CUENTAS) --- */
-QTableWidget {
-    background-color: #1E1E1E;
-    border: 1px solid #333333;
-    gridline-color: #2A2A2A;
-    border-radius: 8px;
-    selection-background-color: #252525;
-    selection-color: #00E5FF;
-    alternate-background-color: #181818;
-}
-
-QHeaderView::section {
-    background-color: #252525;
-    color: #00E5FF;
-    padding: 8px;
-    border: none;
-    border-bottom: 1px solid #333333;
-    font-weight: bold;
-    text-transform: uppercase;
-}
-
-/* --- ETIQUETAS DE ESTADO (LICENCIAS) --- */
-QLabel#licenciaActiva {
-    color: #00E676;
-    font-weight: bold;
-    background-color: rgba(0, 230, 118, 0.1);
-    padding: 5px 12px;
-    border-radius: 6px;
-    border: 1px solid rgba(0, 230, 118, 0.3);
-}
-
-QLabel#licenciaVencida {
-    color: #FF5252;
-    font-weight: bold;
-    background-color: rgba(255, 82, 82, 0.1);
-    padding: 5px 12px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 82, 82, 0.3);
-}
-
-/* --- CONSOLA DE LOGS --- */
-QTextEdit#log_console {
-    background-color: #0A0A0A;
-    border: 1px solid #2A2A2A;
-    border-radius: 8px;
-    padding: 10px;
-    color: #00E5FF;
-    font-family: 'Consolas', 'Courier New', monospace;
+    font-weight: 600;
     font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
-/* --- Estilos para el Módulo de Cuentas (Acordeón) --- */
-
-#AccountCard {
-    background-color: #2b2b2b;
-    border: 1px solid #3d3d3d;
-    border-radius: 8px;
-    margin-bottom: 10px;
+#Sidebar QPushButton:hover {
+    color: #00E5FF;
+    background-color: #141414;
 }
 
-#AccountCard QPushButton {
-    background-color: transparent;
+/* Estado Activo: Borde cian a la izquierda para indicar posición */
+#Sidebar QPushButton:checked, #Sidebar QPushButton[active="true"] {
+    color: #FFFFFF;
+    background-color: #1A1A1A;
+    border-left: 4px solid #00E5FF;
+    font-weight: 800;
+}
+
+/* ========================================================================
+   3. COMPONENTES DE FORMULARIO (MODERNOS)
+   ======================================================================== */
+QLineEdit, QTextEdit, QTimeEdit, QComboBox {
+    background-color: #161616;
+    border: 1px solid #2A2A2A;
+    border-radius: 4px;
+    padding: 10px;
+    color: #FFFFFF;
+}
+
+QLineEdit:focus, QTextEdit:focus, QTimeEdit:focus, QComboBox:focus {
+    border: 1px solid #00E5FF;
+}
+
+QComboBox::drop-down { border: none; }
+QComboBox::down-arrow {
+    image: none;
+    border-top: 5px solid #00E5FF;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    margin-right: 10px;
+}
+
+/* ========================================================================
+   4. TARJETA DE CUENTA (MODERN ACCOUNT CARD)
+   ======================================================================== */
+#ModernAccountCard {
+    background-color: #121212;
+    border: 1px solid #222222;
+    border-radius: 12px;
+}
+
+#ModernAccountCard:hover {
+    background-color: #161616;
+}
+
+/* Resaltado cuando la tarjeta está expandida */
+#ModernAccountCard[expanded="true"] {
+    border: 1px solid #00E5FF;
+    background-color: #141414;
+}
+
+#AccountTitle {
+    font-size: 18px;
+    font-weight: 800;
+    color: #FFFFFF;
     border: none;
-    color: #ffffff;
-    text-align: left;
-    padding: 15px;
-    font-size: 14px;
-    font-weight: bold;
+    background: transparent;
 }
 
-#AccountCard QPushButton:hover {
-    background-color: #3d3d3d;
-    color: #00d4ff; /* Acento Cian */
+#ContextBadge {
+    background-color: rgba(0, 229, 255, 0.1);
+    color: #00E5FF;
+    border: 1px solid rgba(0, 229, 255, 0.3);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 900;
 }
 
-#AccountCard QFrame {
-    background-color: #212121;
-    border-top: 1px solid #3d3d3d;
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
+/* Línea de Log Neón */
+#MinimalLog {
+    color: #00FFCC;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    border: none;
+    background: transparent;
 }
 
-#AccountCard QLabel {
-    color: #aaaaaa;
+#HistoryBtn {
+    background-color: transparent;
+    color: #00E5FF;
+    border: 1px solid #00E5FF;
+    padding: 12px;
+    font-weight: 900;
     font-size: 11px;
     text-transform: uppercase;
-    font-weight: bold;
-    margin-top: 10px;
 }
 
-#AccountCard QLineEdit, #AccountCard QTextEdit {
-    background-color: #1a1a1a;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    color: #e0e0e0;
-    padding: 8px;
-}
-
-#AccountCard QLineEdit:focus, #AccountCard QTextEdit:focus {
-    border: 1px solid #00d4ff;
-}
-
-/* Botón de Eliminar con estilo de advertencia */
-#DeleteBtn {
-    background-color: #442222 !important;
-    color: #ff5555 !important;
-    border: 1px solid #663333 !important;
-    border-radius: 4px;
-    padding: 8px !important;
-    font-weight: normal !important;
-}
-
-#DeleteBtn:hover {
-    background-color: #ff5555 !important;
-    color: white !important;
-}
-
-#AddButton {
-    background-color: #00d4ff;
+#HistoryBtn:hover {
+    background-color: #00E5FF;
     color: #000;
-    font-weight: bold;
-    padding: 8px 15px;
-    border-radius: 15px;
 }
 
-#AddButton:hover {
-    background-color: #008fb3;
+/* ========================================================================
+   5. BOTONES Y SCROLL
+   ======================================================================== */
+#AddButtonModern {
+    background-color: #00E5FF;
+    color: #000000;
+    font-weight: 900;
+    border-radius: 4px;
+    padding: 10px 25px;
 }
 
-/* Estilos del Diálogo */
-#CustomDialog {
-    background-color: #1a1a1a;
+#AddButtonModern:hover {
+    background-color: #FFFFFF;
 }
 
-#CustomDialog QLineEdit, #CustomDialog QTextEdit {
-    background-color: #252525;
-    border: 1px solid #333;
-    color: white;
-    padding: 8px;
+QScrollBar:vertical {
+    background: #080808;
+    width: 8px;
+}
+
+QScrollBar::handle:vertical {
+    background: #222;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #00E5FF;
 }

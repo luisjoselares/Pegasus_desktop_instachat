@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCursor
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from services.cloud_service import validar_licencia_cliente, sincronizar_aplicacion
 
 # Importación de Servicios y Vistas
 from services.mailer_service import MailerService
@@ -69,7 +70,7 @@ class LoginPage(QWidget):
         self.setLayout(layout)
 
     def ejecutar_login(self):
-        email = self.txt_email.text().strip()
+        email = self.txt_email.text().strip().lower()
         password = self.txt_password.text().strip()
         
         # Obtenemos el HWID para validar el equipo
@@ -85,34 +86,58 @@ class LoginPage(QWidget):
 
         try:
             load_dotenv()
-            supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY")
+            if not supabase_url or not supabase_key:
+                raise Exception("Variables de entorno SUPABASE_URL o SUPABASE_KEY no configuradas.")
 
-            # 1. Validar Credenciales
-            res = supabase.table("clientes").select("*").eq("email", email).execute()
-            if not res.data or res.data[0]["password"] != password:
-                QMessageBox.critical(self, "Error", "Correo o contraseña incorrectos.")
+            supabase: Client = create_client(supabase_url, supabase_key)
+
+            # 1. Validar Credenciales (correo insensible a mayúsculas/minúsculas)
+            res = supabase.table("clientes").select("*").ilike("email", email).execute()
+            if not getattr(res, 'data', None) or res.data[0].get("password") != password:
+                respuesta = QMessageBox.question(
+                    self,
+                    "Acceso Denegado",
+                    "El correo o la contraseña son incorrectos, o el usuario no existe.\n\n¿Deseas crear una cuenta nueva en Pegasus?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
+                )
+
+                if respuesta == QMessageBox.StandardButton.Yes:
+                    self.txt_password.clear()
+                    self.parent.stack.setCurrentIndex(1)
+                else:
+                    self.txt_password.clear()
+                    self.txt_email.setFocus()
                 return
 
-            cliente = res.data[0]
+            cliente_data = res.data[0]
 
-            # 2. Validar Licencia Activa
-            lic_res = supabase.table("licencias").select("*").eq("cliente_id", cliente["id"]).eq("estado", "ACTIVO").execute()
-            if not lic_res.data:
-                QMessageBox.warning(self, "Licencia", "No tienes una licencia activa en el sistema.")
+            # 1. Auto-Registro Dinámico de la App
+            app_id_dinamico = sincronizar_aplicacion(nombre_app="Bot_Instagram", version_app="1.0.0")
+            if not app_id_dinamico:
+                QMessageBox.critical(self, "Error de Sistema", "No se pudo sincronizar la aplicación con el servidor central.")
                 return
 
-            licencia = lic_res.data[0]
-            
-            # Guardamos los datos para que el MainWindow los reciba
-            self.parent.cliente_autorizado = cliente
-            self.parent.licencia_autorizada = licencia
-            
-            # 3. Seguridad de Dispositivo (HWID)
-            hwid_registrado = licencia.get("hwid_pc")
-            if hwid_registrado and hwid_registrado != current_hwid:
-                self.gestionar_migracion(supabase, licencia, cliente, current_hwid)
-            else:
-                self.parent.accept() # Éxito total
+            # 2. Obtener el HWID de la PC
+            hwid = self.parent.register_page.obtener_hwid()
+
+            # 3. Validar Licencia usando el ID dinámico
+            check_licencia = validar_licencia_cliente(
+                cliente_id=cliente_data["id"],
+                app_id=app_id_dinamico,
+                hwid_actual=hwid
+            )
+
+            if not check_licencia.get("valido"):
+                QMessageBox.critical(self, "Licencia Requerida", check_licencia.get("mensaje", "Licencia no válida."))
+                return
+
+            # Si todo sale bien, damos acceso:
+            self.parent.cliente_autorizado = cliente_data
+            self.parent.licencia_autorizada = check_licencia.get("datos") or check_licencia.get("datos_licencia")
+            self.parent.accept()
 
         except Exception as e:
             QMessageBox.critical(self, "Error de Red", f"Fallo al conectar con el servidor: {e}")

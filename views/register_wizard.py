@@ -1,10 +1,11 @@
 import os
+import random
 import subprocess
+from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
                              QPushButton, QMessageBox, QApplication)
 from PyQt6.QtCore import Qt
-from supabase import create_client, Client
-from dotenv import load_dotenv
+from services.cloud_service import registrar_nuevo_usuario, sincronizar_aplicacion
 
 class RegisterWizard(QWidget):
     def __init__(self, parent):
@@ -67,9 +68,15 @@ class RegisterWizard(QWidget):
         self.btn_main.clicked.connect(self.gestionar_flujo_registro)
         self.layout.addWidget(self.btn_main)
 
+        self.btn_reenviar = QPushButton("Reenviar Código")
+        self.btn_reenviar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reenviar.clicked.connect(self.reenviar_codigo)
+        self.btn_reenviar.setVisible(False)
+        self.layout.addWidget(self.btn_reenviar)
+
         btn_back = QPushButton("Volver al Login")
         btn_back.setStyleSheet("background: transparent; color: #888888; border: none;")
-        btn_back.clicked.connect(self.parent.mostrar_login)
+        btn_back.clicked.connect(self.limpiar_y_volver)
         self.layout.addWidget(btn_back)
 
         self.setLayout(self.layout)
@@ -84,7 +91,7 @@ class RegisterWizard(QWidget):
     def gestionar_flujo_registro(self):
         if not self.generated_otp:
             nombre = self.txt_nombre.text().strip()
-            email = self.txt_email.text().strip()
+            email = self.txt_email.text().strip().lower()
             pw = self.txt_pass.text()
             pw_c = self.txt_pass_confirm.text()
 
@@ -114,6 +121,7 @@ class RegisterWizard(QWidget):
 
             if otp:
                 self.generated_otp = otp
+                self.otp_expiracion = datetime.now() + timedelta(minutes=5)
                 self.user_pending_data = {"nombre": nombre, "email": email, "pw": pw}
                 
                 self.txt_nombre.setEnabled(False)
@@ -121,51 +129,71 @@ class RegisterWizard(QWidget):
                 self.txt_pass.setVisible(False)
                 self.txt_pass_confirm.setVisible(False)
                 self.otp_container.setVisible(True)
+                self.btn_reenviar.setVisible(True)
                 self.btn_main.setText("FINALIZAR REGISTRO")
                 self.btn_main.setEnabled(True)
             else:
                 self.btn_main.setText("ENVIAR CÓDIGO DE VERIFICACIÓN")
                 self.btn_main.setEnabled(True)
         else:
+            if getattr(self, 'otp_expiracion', None) and datetime.now() > self.otp_expiracion:
+                QMessageBox.warning(self, "Código vencido", "Código vencido. Por favor, solicita un nuevo código de verificación.")
+                return
+
             if self.txt_otp.text().strip() == self.generated_otp:
                 self.registrar_en_supabase()
             else:
                 QMessageBox.warning(self, "Error", "Código de verificación incorrecto.")
 
     def registrar_en_supabase(self):
-        try:
-            load_dotenv()
-            supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-            
-            d = self.user_pending_data
-            
-            c_res = supabase.table("clientes").insert({
-                "nombre_completo": d["nombre"],
-                "email": d["email"],
-                "password": d["pw"]
-            }).execute()
-            
-            cid = c_res.data[0]["id"]
+        app_id = sincronizar_aplicacion("Bot_Instagram", "1.0.0")
+        if not app_id:
+            QMessageBox.critical(self, "Error de Sistema", "No se pudo sincronizar la aplicación con el servidor central.")
+            return
 
-            l_res = supabase.table("licencias").insert({
-                "cliente_id": cid,
-                "app_id": 1, 
-                "fecha_vencimiento": "2026-12-31",
-                "estado": "ACTIVO",
-                "hwid_pc": self.hwid
-            }).execute()
+        exp_str = self.otp_expiracion.isoformat() if getattr(self, 'otp_expiracion', None) else datetime.now().isoformat()
+        resultado = registrar_nuevo_usuario(self.user_pending_data, self.hwid, app_id, exp_str)
 
-            supabase.table("pagos").insert({
-                "cliente_id": cid,
-                "licencia_id": l_res.data[0]["id"],
-                "monto": 0,
-                "metodo_pago": "REGISTRO_WEB",
-                "referencia": "VERIFICADO",
-                "fecha_transferencia": "2026-04-03"
-            }).execute()
+        if not resultado.get("exito"):
+            QMessageBox.critical(self, "Error DB", resultado.get("mensaje", "Error al registrar el usuario."))
+            return
 
-            QMessageBox.information(self, "Éxito", "¡Cuenta creada con éxito!")
-            self.parent.mostrar_login()
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Error DB", str(e))
+        QMessageBox.information(self, "Éxito", "¡Cuenta creada con éxito!")
+        self.limpiar_y_volver()
+
+    def reenviar_codigo(self):
+        if not self.user_pending_data.get("email"):
+            return
+
+        nuevo_otp = f"{random.randint(0, 999999):06d}"
+        self.generated_otp = nuevo_otp
+        self.otp_expiracion = datetime.now() + timedelta(minutes=5)
+
+        self.parent.enviar_email(
+            self.user_pending_data["email"],
+            "Reenvío de Código de Verificación Pegasus",
+            f"Tu nuevo código de verificación es: {nuevo_otp}. Tienes 5 minutos para ingresarlo."
+        )
+
+        QMessageBox.information(self, "Código Enviado", "Se ha enviado un nuevo código a tu correo. Tienes 5 minutos para ingresarlo.")
+
+    def limpiar_y_volver(self):
+        self.txt_nombre.clear()
+        self.txt_email.clear()
+        self.txt_pass.clear()
+        self.txt_pass_confirm.clear()
+        self.txt_otp.clear()
+        self.user_pending_data = {}
+        self.generated_otp = None
+        self.otp_expiracion = None
+
+        self.otp_container.setVisible(False)
+        self.btn_reenviar.setVisible(False)
+        self.txt_nombre.setEnabled(True)
+        self.txt_email.setEnabled(True)
+        self.txt_pass.setVisible(True)
+        self.txt_pass_confirm.setVisible(True)
+        self.btn_main.setText("ENVIAR CÓDIGO DE VERIFICACIÓN")
+        self.btn_main.setEnabled(True)
+
+        self.parent.mostrar_login()
