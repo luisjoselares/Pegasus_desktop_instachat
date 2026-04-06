@@ -1,8 +1,8 @@
 import qtawesome as qta
-from datetime import datetime
+from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QFrame, 
-                             QLabel, QScrollArea, QHBoxLayout, QMessageBox)
-from PyQt6.QtCore import Qt, QSize
+                             QLabel, QScrollArea, QHBoxLayout, QMessageBox, QInputDialog, QLineEdit)
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer, QTime
 # Importamos el diálogo desde la nueva subcarpeta
 from views.dialogs.instagram_dialog import AddAccountDialog
 from views.dialogs.conversation_dialog import ConversationDialog
@@ -19,15 +19,38 @@ class ClickableFrame(QFrame):
 
 
 class AccountCard(QFrame):
+    request_force_activate = pyqtSignal(object)
+    request_edit_account = pyqtSignal(object)
+
     def __init__(self, data, controller):
         super().__init__()
         self.account_id = data.get('id')
         self.controller = controller
         self.is_expanded = False
         self.setObjectName("ModernAccountCard")
+
+        self.account_state = self._resolve_account_state(data)
+        self.current_state = self.account_state == 'active'
+        self.pause_until = self._get_pause_until(data)
+        self.setProperty("accountState", self.account_state)
         self.setStyleSheet(
-            "QFrame#ModernAccountCard { background-color: #0A0A0A; border: 1px solid #222; border-radius: 16px; }"
+            "QFrame#ModernAccountCard {"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0B0B0B, stop:1 #141A1F);"
+            "border: 1px solid #1E2A35;"
+            "border-radius: 18px;"
+            "padding: 1px;"
+            "}"
+            "QFrame#ModernAccountCard:hover {"
+            "border-color: #00E5FF;"
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0F1116, stop:1 #16212C);"
+            "}"
+            "QFrame#CardHeader {"
+            "background: rgba(255,255,255,0.03);"
+            "border-radius: 14px;"
+            "}"
         )
+        self.style().unpolish(self)
+        self.style().polish(self)
 
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(16, 16, 16, 16)
@@ -64,8 +87,12 @@ class AccountCard(QFrame):
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
 
-        state_icon_name = 'fa5s.robot' if self.current_state else 'fa5s.moon'
-        state_color = '#00E5FF' if self.current_state else '#FF8A00'
+        state_colors = {
+            'active': ('fa5s.check-circle', '#3CE823'),
+            'paused': ('fa5s.bell-slash', '#FFA500'),
+            'inactive': ('fa5s.pause-circle', '#888888')
+        }
+        state_icon_name, state_color = state_colors.get(self.account_state, ('fa5s.check-circle', '#3CE823'))
         self.state_badge = QLabel(f" {data.get('context_type', 'Vendedor de tienda')} ")
         self.state_badge.setStyleSheet(
             f"background-color: #1A1A1A; color: {state_color}; border: 1px solid #222; border-radius: 12px; padding: 6px 10px;"
@@ -84,12 +111,40 @@ class AccountCard(QFrame):
         header_layout.addWidget(badge_container)
 
         self.status_led = QLabel("●")
-        self.status_led.setStyleSheet(f"color: {'#00FFCC' if self.current_state else '#FF3366'}; font-size: 16px; margin-right: 8px;")
+        self.status_led.setObjectName("AccountStatusLed")
+        self.status_led.setProperty("status", self.account_state)
+        self.status_led.setStyleSheet("font-size: 16px; margin-right: 8px;")
         header_layout.addWidget(self.status_led)
 
-        self.status_label = QLabel("ENCENDIDO" if self.current_state else "APAGADO")
+        self.status_label = QLabel(self._get_state_label())
         self.status_label.setStyleSheet("color: #CCCCCC; font-size: 11px; font-weight: 700;")
         header_layout.addWidget(self.status_label)
+
+        self.pause_timer_label = QLabel()
+        self.pause_timer_label.setObjectName("AccountPauseInfo")
+        self.pause_timer_label.setStyleSheet("color: #FFA500; font-size: 10px; margin-left: 8px;")
+        self.pause_timer_label.setVisible(self.account_state == 'paused')
+        header_layout.addWidget(self.pause_timer_label)
+
+        if self.account_state == 'paused':
+            self._refresh_pause_timer()
+
+        self.btn_force_activate = QPushButton(qta.icon('fa5s.bolt', color='#00E5FF'), "")
+        self.btn_force_activate.setObjectName("ForceActivateBtn")
+        self.btn_force_activate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_force_activate.setFixedSize(QSize(32, 32))
+        self.btn_force_activate.setToolTip("Forzar activación")
+        self.btn_force_activate.setVisible(self.account_state == 'paused')
+        self.btn_force_activate.clicked.connect(self._on_force_activate_clicked)
+        header_layout.addWidget(self.btn_force_activate)
+
+        self.btn_edit = QPushButton(qta.icon('fa5s.cog', color='#CCCCCC'), "")
+        self.btn_edit.setObjectName("EditAccountBtn")
+        self.btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_edit.setFixedSize(QSize(32, 32))
+        self.btn_edit.setToolTip("Editar configuración de la cuenta")
+        self.btn_edit.clicked.connect(self._on_edit_clicked)
+        header_layout.addWidget(self.btn_edit)
 
         self.btn_toggle = QPushButton(qta.icon('fa5s.power-off', color='#FFFFFF'), "")
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -109,7 +164,11 @@ class AccountCard(QFrame):
 
         self.details_frame = QFrame()
         self.details_frame.setVisible(False)
-        self.details_frame.setStyleSheet("background: #0A0A0A; border: none;")
+        self.details_frame.setStyleSheet(
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(255,255,255,0.02), stop:1 rgba(255,255,255,0.04));"
+            "border: 1px solid rgba(255,255,255,0.05);"
+            "border-radius: 16px;"
+        )
         self.details_layout = QVBoxLayout(self.details_frame)
         self.details_layout.setContentsMargins(0, 0, 0, 0)
         self.details_layout.setSpacing(14)
@@ -118,8 +177,15 @@ class AccountCard(QFrame):
         stats_layout.setSpacing(10)
         stats_layout.addWidget(self._build_stat_card('fa5s.comment-dots', '#00E5FF', 'Atendidos Hoy', '0'))
         stats_layout.addWidget(self._build_stat_card('fa5s.broom', '#FF8A00', 'Ignorados (+24h)', '0'))
-        stats_layout.addWidget(self._build_stat_card('fa5s.user-tie', '#FFFFFF', 'Rol', data.get('context_type', 'Vendedor de tienda')))
+        stats_layout.addWidget(self._build_stat_card('fa5s.comments', '#00E5FF', 'Chats detectados', str(data.get('active_chat_count', 0))))
+        stats_layout.addWidget(self._build_stat_card('fa5s.clock', '#FFFFFF', 'Siguiente cambio', data.get('next_chat_avg', 'N/A')))
         self.details_layout.addLayout(stats_layout)
+
+        self.task_label = QLabel(data.get('current_task', 'Esperando actividad...'))
+        self.task_label.setWordWrap(True)
+        self.task_label.setStyleSheet("color: #88DDFF; font-size: 11px; margin-top: 4px;")
+        self.details_layout.addWidget(self._build_section_title('Estado Actual'))
+        self.details_layout.addWidget(self.task_label)
 
         self.details_layout.addWidget(self._build_section_title('Conversaciones Recientes'))
 
@@ -167,6 +233,66 @@ class AccountCard(QFrame):
         self.style().unpolish(self)
         self.style().polish(self)
 
+    def _resolve_account_state(self, data):
+        if data.get('bot_enabled') != 1:
+            return 'inactive'
+
+        if data.get('pause_active') or data.get('status') in ('PAUSED', 'MANUAL'):
+            return 'paused'
+
+        paused_until = self._get_pause_until(data)
+        if paused_until and paused_until > datetime.now():
+            return 'paused'
+
+        return 'active'
+
+    def _get_pause_until(self, data):
+        paused_until = data.get('paused_until') or data.get('pausedUntil') or data.get('pause_until')
+        if not paused_until:
+            return None
+        try:
+            return datetime.fromisoformat(paused_until)
+        except Exception:
+            return None
+
+    def _get_state_label(self):
+        return {
+            'active': 'ACTIVO',
+            'paused': 'SILENCIADO',
+            'inactive': 'INACTIVO'
+        }.get(self.account_state, 'ACTIVO')
+
+    def _get_pause_remaining_text(self):
+        if not self.pause_until:
+            return "Reactivación pendiente"
+        remaining = self.pause_until - datetime.now()
+        if remaining.total_seconds() <= 0:
+            return "Reactivación disponible"
+        minutes = int(remaining.total_seconds() // 60)
+        hours = minutes // 60
+        minutes = minutes % 60
+        parts = []
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes or not parts:
+            parts.append(f"{minutes}m")
+        return "Reactivación en " + " ".join(parts)
+
+    def _refresh_pause_timer(self):
+        if self.account_state != 'paused':
+            self.pause_timer_label.setVisible(False)
+            return
+        self.pause_timer_label.setText(self._get_pause_remaining_text())
+        self.pause_timer_label.setVisible(True)
+        if self.pause_until and self.pause_until > datetime.now():
+            QTimer.singleShot(60000, self._refresh_pause_timer)
+
+    def _on_force_activate_clicked(self):
+        self.request_force_activate.emit(self.account_id)
+
+    def _on_edit_clicked(self):
+        self.request_edit_account.emit(self.account_id)
+
     def _build_stat_card(self, icon_name, color, title, value):
         card = QFrame()
         card.setStyleSheet(
@@ -202,25 +328,52 @@ class AccountCard(QFrame):
 
     def _build_conversation_row(self, conversation):
         row = QFrame()
+        row.setObjectName("ConversationRow")
         row.setStyleSheet(
-            "background-color: #1A1A1A; border: 1px solid #222; border-radius: 6px;"
+            "QFrame#ConversationRow {"
+            "background-color: #111419;"
+            "border: 1px solid #1F2933;"
+            "border-radius: 12px;"
+            "}"
+            "QFrame#ConversationRow:hover {"
+            "border-color: #00E5FF;"
+            "background-color: #151B21;"
+            "}"
         )
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(10, 10, 10, 10)
+        row_layout.setContentsMargins(12, 12, 12, 12)
         row_layout.setSpacing(12)
 
         icon_label = QLabel()
         icon_label.setPixmap(qta.icon('fa5s.user', color='#00E5FF').pixmap(16, 16))
         row_layout.addWidget(icon_label)
 
+        info_layout = QVBoxLayout()
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(4)
+
         name = QLabel(conversation.get('title', conversation.get('username', 'Cliente')))
         name.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: 700;")
-        row_layout.addWidget(name)
+        info_layout.addWidget(name)
 
+        thread_id = conversation.get('thread_id', '')
+        truncated_thread = thread_id[:12] + '...' if thread_id and len(thread_id) > 15 else thread_id
+        subtitle = QLabel(f"{truncated_thread} • {conversation.get('last_message', '')}")
+        subtitle.setStyleSheet("color: #888888; font-size: 10px;")
+        subtitle.setWordWrap(True)
+        info_layout.addWidget(subtitle)
+
+        row_layout.addLayout(info_layout)
         row_layout.addStretch()
 
-        status = QLabel("🤖 Gestionado por IA")
-        status.setStyleSheet("color: #CCCCCC; font-size: 11px;")
+        status_text = "🤖 Gestionado por IA"
+        status_color = "#CCCCCC"
+        if conversation.get('status') == 'Manual':
+            status_text = "✋ Manual"
+            status_color = "#FFA500"
+
+        status = QLabel(status_text)
+        status.setStyleSheet(f"color: {status_color}; font-size: 11px;")
         row_layout.addWidget(status)
 
         btn_open = QPushButton(qta.icon('fa5s.eye', color='#00E5FF'), "")
@@ -228,7 +381,7 @@ class AccountCard(QFrame):
         btn_open.setFixedSize(QSize(32, 32))
         btn_open.setStyleSheet(
             "QPushButton { background-color: transparent; border: none; color: #00E5FF; }"
-            "QPushButton:hover { background-color: rgba(0, 228, 255, 0.1); border-radius: 6px; }"
+            "QPushButton:hover { background-color: rgba(0, 228, 255, 0.12); border-radius: 6px; }"
         )
         btn_open.clicked.connect(lambda _, conv=conversation: self.open_conversation(conv))
         row_layout.addWidget(btn_open)
@@ -242,7 +395,7 @@ class AccountCard(QFrame):
         btn_manual.setProperty("muted_at", None)
         btn_manual.setStyleSheet(
             "QPushButton { background-color: transparent; border: none; color: #CCCCCC; }"
-            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.08); border-radius: 6px; }"
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.12); border-radius: 6px; }"
         )
         btn_manual.clicked.connect(lambda _, tid=thread_id, btn=btn_manual, lbl=status: self.toggle_manual_control(tid, btn, lbl))
         row_layout.addWidget(btn_manual)
@@ -332,9 +485,12 @@ class AccountCard(QFrame):
         super().mousePressEvent(event)
 
 class InstagramAccountsPage(QWidget):
-    def __init__(self, controller):
+    def __init__(self, controller, main_window=None):
         super().__init__()
         self.controller = controller
+        self.main_window = main_window
+        self.last_edit_unlock = None
+        self.edit_grace_period = timedelta(minutes=5)
         self.setObjectName("InstagramAccountsPage")
         
         self.main_layout = QVBoxLayout(self)
@@ -354,6 +510,17 @@ class InstagramAccountsPage(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(self.btn_add)
         self.main_layout.addLayout(header_layout)
+
+        self.admin_status_label = QLabel("")
+        self.admin_status_label.setStyleSheet("color: #00E5FF; font-size: 11px; margin-bottom: 8px;")
+        self.admin_status_label.setVisible(False)
+        self.main_layout.addWidget(self.admin_status_label)
+
+        self.admin_status_timer = QTimer(self)
+        self.admin_status_timer.setInterval(30000)
+        self.admin_status_timer.timeout.connect(self.update_admin_status_label)
+        self.admin_status_timer.start()
+        self.update_admin_status_label()
 
         # Línea de acento Pegasus (Cian)
         accent_line = QFrame()
@@ -392,6 +559,109 @@ class InstagramAccountsPage(QWidget):
         if dialog.exec() == AddAccountDialog.DialogCode.Accepted:
             self.controller.add_account(dialog.get_data())
 
+    def on_card_force_activate(self, account_id):
+        if hasattr(self.controller, 'force_activate_account'):
+            restored = self.controller.force_activate_account(account_id)
+            if restored:
+                QMessageBox.information(
+                    self,
+                    "Activación Forzada",
+                    f"Se reactivaron {restored} hilo(s) para la cuenta."
+                )
+                self.controller.refresh(self.controller.cliente_id)
+        else:
+            QMessageBox.warning(self, "Función no disponible", "No se puede forzar activación en este momento.")
+
+    def on_card_edit_account(self, account_id):
+        if not self._verify_admin_access():
+            return
+        self.open_edit_dialog(account_id)
+        self.update_admin_status_label()
+
+    def _is_edit_grace_active(self):
+        if not self.last_edit_unlock:
+            return False
+        return (datetime.now() - self.last_edit_unlock) < self.edit_grace_period
+
+    def _verify_admin_access(self):
+        if self._is_edit_grace_active():
+            return True
+
+        expected_password = ''
+        if self.main_window and getattr(self.main_window, 'cliente_data', None):
+            expected_password = self.main_window.cliente_data.get('password', '')
+
+        if not expected_password:
+            QMessageBox.warning(self, 'Acceso restringido', 'No hay una contraseña de sesión válida configurada.')
+            return False
+
+        password, ok = QInputDialog.getText(
+            self,
+            'Verificación Administrativa',
+            'Ingresa la contraseña de Pegasus:',
+            QLineEdit.EchoMode.Password
+        )
+        if not ok:
+            return False
+
+        verified = False
+        if self.main_window and getattr(self.main_window, 'security_service', None):
+            verified = self.main_window.security_service.verify_password(password, expected_password)
+        else:
+            verified = password == expected_password
+
+        if verified:
+            self.last_edit_unlock = datetime.now()
+            return True
+
+        QMessageBox.critical(self, 'Acceso Denegado', 'La contraseña ingresada es incorrecta.')
+        if self.main_window and hasattr(self.main_window, 'append_log_message'):
+            self.main_window.append_log_message('Intento de edición fallido: contraseña incorrecta.')
+        return False
+
+    def update_admin_status_label(self):
+        if self._is_edit_grace_active():
+            remaining = self.edit_grace_period - (datetime.now() - self.last_edit_unlock)
+            minutes = int(remaining.total_seconds() // 60)
+            seconds = int(remaining.total_seconds() % 60)
+            self.admin_status_label.setText(f"Acceso administrativo autorizado localmente. Expira en {minutes}m {seconds}s.")
+            self.admin_status_label.setVisible(True)
+            return
+
+        if self.main_window and getattr(self.main_window, 'is_admin_clearance_active', None):
+            try:
+                if self.main_window.is_admin_clearance_active():
+                    remaining = self.main_window.admin_session_duration - (datetime.now() - self.main_window.last_admin_unlock)
+                    minutes = int(remaining.total_seconds() // 60)
+                    seconds = int(remaining.total_seconds() % 60)
+                    self.admin_status_label.setText(f"Sesión administrativa activa. Expira en {minutes}m {seconds}s.")
+                    self.admin_status_label.setVisible(True)
+                    return
+            except Exception:
+                pass
+
+        self.admin_status_label.setVisible(False)
+
+    def open_edit_dialog(self, account_id):
+        account = None
+        if hasattr(self.controller.db, 'get_account_by_id'):
+            account = self.controller.db.get_account_by_id(account_id, self.controller.cliente_id)
+        if not account:
+            QMessageBox.warning(self, "Cuenta no encontrada", "No se pudo cargar la cuenta para edición.")
+            return
+
+        dialog = AddAccountDialog(self, account_data=account)
+
+        if dialog.exec() == AddAccountDialog.DialogCode.Accepted:
+            data = dialog.get_data()
+            updated = self.controller.edit_account(account_id, data)
+            if updated:
+                self.controller.db.actualizar_log(account_id, "Configuración de cuenta actualizada.")
+                self.controller.refresh(self.controller.cliente_id)
+                QMessageBox.information(self, "Cuenta actualizada", "Los cambios se guardaron correctamente.")
+            else:
+                QMessageBox.warning(self, "No se guardaron cambios", "No se detectaron cambios o hubo un error al actualizar la cuenta.")
+
     def load_accounts(self, accounts):
         """Pobla la lista de tarjetas dinámicamente."""
         while self.cards_layout.count():
@@ -401,10 +671,13 @@ class InstagramAccountsPage(QWidget):
         
         for acc in accounts:
             card = AccountCard(acc, self.controller)
+            card.request_force_activate.connect(self.on_card_force_activate)
+            card.request_edit_account.connect(self.on_card_edit_account)
             self.cards_layout.addWidget(card)
         
         # Stretch final para mantener las tarjetas en la parte superior
         self.cards_layout.addStretch()
+        self.update_admin_status_label()
 
         self.btn_add.setEnabled(not self._account_limit_reached())
         self.btn_add.setToolTip(

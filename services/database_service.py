@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -36,10 +37,18 @@ class LocalDBService:
                     description TEXT DEFAULT '',
                     system_prompt TEXT DEFAULT '',
                     bot_enabled INTEGER DEFAULT 0,
+                    bot_role TEXT DEFAULT '',
+                    business_name TEXT DEFAULT '',
+                    business_data TEXT DEFAULT '',
+                    operating_hours TEXT DEFAULT '',
+                    inventory_path TEXT DEFAULT '',
+                    structured_identity TEXT DEFAULT '',
                     proxy TEXT DEFAULT 'Auto',
                     schedule_start TEXT DEFAULT '08:00',
                     schedule_end TEXT DEFAULT '18:00',
-                    context_type TEXT DEFAULT 'Vendedor de tienda',                    session_data TEXT DEFAULT '',                    last_log TEXT DEFAULT 'Sistema listo'
+                    context_type TEXT DEFAULT 'Vendedor de tienda',
+                    session_data TEXT DEFAULT '',
+                    last_log TEXT DEFAULT 'Sistema listo'
                 )
             """)
 
@@ -77,7 +86,14 @@ class LocalDBService:
                 "cliente_id": "TEXT DEFAULT ''",
                 "store_name": "TEXT DEFAULT ''",
                 "description": "TEXT DEFAULT ''",
+                "system_prompt": "TEXT DEFAULT ''",
                 "bot_enabled": "INTEGER DEFAULT 0",
+                "bot_role": "TEXT DEFAULT ''",
+                "business_name": "TEXT DEFAULT ''",
+                "business_data": "TEXT DEFAULT ''",
+                "operating_hours": "TEXT DEFAULT ''",
+                "inventory_path": "TEXT DEFAULT ''",
+                "structured_identity": "TEXT DEFAULT ''",
                 "proxy": "TEXT DEFAULT 'Auto'",
                 "schedule_start": "TEXT DEFAULT '08:00'",
                 "schedule_end": "TEXT DEFAULT '18:00'",
@@ -111,6 +127,30 @@ class LocalDBService:
 
     # --- MÉTODOS DE OPERACIÓN ---
 
+
+    def _normalize_role_key(self, role):
+        if not role:
+            return 'GENERICO'
+        role_key = role.strip().upper()
+        if role_key.startswith('VENDEDOR'):
+            return 'VENDEDOR'
+        if 'CREATIVO' in role_key:
+            return 'CREATIVO'
+        if 'SOPORTE' in role_key:
+            return 'SOPORTE'
+        if 'CONCILIADOR' in role_key:
+            return 'CONCILIADOR'
+        return 'GENERICO'
+
+    def _normalize_account_role(self, account):
+        if not account:
+            return account
+        raw_role = account.get('bot_role') or account.get('context_type') or ''
+        normalized_role = self._normalize_role_key(raw_role)
+        account['bot_role'] = normalized_role
+        account['context_type'] = account.get('context_type') or raw_role or normalized_role
+        return account
+
     def obtener_cuentas(self, cliente_id=None):
         """Retorna las cuentas como dicts para que funcione .get() en la vista."""
         with self.get_connection() as conn:
@@ -118,7 +158,7 @@ class LocalDBService:
                 cursor = conn.execute("SELECT * FROM settings WHERE cliente_id = ?", (cliente_id,))
             else:
                 cursor = conn.execute("SELECT * FROM settings")
-            return [dict(row) for row in cursor.fetchall()]
+            return [self._normalize_account_role(dict(row)) for row in cursor.fetchall()]
 
     def obtener_conversaciones_recientes(self, cliente_id=None, limit=3):
         """Retorna las conversaciones recientes para mostrar en el dashboard."""
@@ -183,15 +223,67 @@ class LocalDBService:
                 for row in cursor.fetchall()
             ]
 
+    def obtener_chats_activos(self, cliente_id=None, limit=10):
+        """Retorna los chats activos que el bot ha detectado, con su estado actual."""
+        with self.get_connection() as conn:
+            if cliente_id is not None:
+                query = (
+                    "SELECT ch.thread_id, ch.username, ch.mensaje_usuario, ch.respuesta_ia, ch.fecha, "
+                    "COALESCE(cs.status, 'ACTIVE') as status, cs.paused_until "
+                    "FROM chat_history ch "
+                    "LEFT JOIN chat_status cs ON ch.thread_id = cs.thread_id AND cs.cliente_id = ? "
+                    "WHERE ch.cliente_id = ? AND ch.fecha IN ("
+                    "  SELECT MAX(fecha) FROM chat_history WHERE cliente_id = ? GROUP BY thread_id"
+                    ") "
+                    "ORDER BY ch.fecha DESC LIMIT ?"
+                )
+                params = (cliente_id, cliente_id, cliente_id, limit)
+            else:
+                query = (
+                    "SELECT ch.thread_id, ch.username, ch.mensaje_usuario, ch.respuesta_ia, ch.fecha, "
+                    "COALESCE(cs.status, 'ACTIVE') as status, cs.paused_until "
+                    "FROM chat_history ch "
+                    "LEFT JOIN chat_status cs ON ch.thread_id = cs.thread_id "
+                    "WHERE ch.fecha IN ("
+                    "  SELECT MAX(fecha) FROM chat_history GROUP BY thread_id"
+                    ") "
+                    "ORDER BY ch.fecha DESC LIMIT ?"
+                )
+                params = (limit,)
+            cursor = conn.execute(query, params)
+            return [
+                {
+                    "thread_id": row["thread_id"],
+                    "title": row["username"],
+                    "status": "Manual" if row["status"] == "PAUSED" else "Activa",
+                    "current_state": row["status"] != "PAUSED",
+                    "last_message": row["mensaje_usuario"],
+                    "timestamp": row["fecha"],
+                    "paused_until": row["paused_until"],
+                }
+                for row in cursor.fetchall()
+            ]
+
     def agregar_cuenta(self, data, cliente_id=None):
         with self.get_connection() as conn:
+            structured_identity = data.get('structured_identity', '')
+            if isinstance(structured_identity, dict):
+                structured_identity = json.dumps(structured_identity)
+
             columns = [
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
+                'bot_role', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
             ]
+            inventory_path = data.get('inventory_path', '') or ''
+            if inventory_path:
+                inventory_path = os.path.abspath(inventory_path)
+
             values = [
                 data['user'], data['pass'], data.get('store_name', ''), data.get('description', ''),
-                data['prompt'], data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
+                data['prompt'], data.get('bot_role', ''), data.get('business_name', ''), data.get('business_data', ''),
+                data.get('operating_hours', ''), inventory_path, structured_identity,
+                data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
             ]
             if cliente_id is not None:
                 columns.insert(0, 'cliente_id')
@@ -204,10 +296,155 @@ class LocalDBService:
             )
             conn.commit()
 
-    def actualizar_estado_bot(self, account_id, estado):
+    def actualizar_estado_bot(self, account_id, estado, cliente_id=None):
+        self.update_settings(account_id, {'bot_enabled': 1 if estado else 0}, cliente_id)
+
+    def actualizar_contexto(self, account_id, prompt, cliente_id=None):
+        self.update_settings(account_id, {'system_prompt': prompt}, cliente_id)
+
+    def update_settings(self, account_id, changes, cliente_id=None):
+        if not changes:
+            return 0
+
+        payload = dict(changes)
+        if 'structured_identity' in payload and isinstance(payload['structured_identity'], dict):
+            payload['structured_identity'] = json.dumps(payload['structured_identity'])
+
+        allowed = {
+            'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
+            'description', 'bot_role', 'business_name', 'business_data',
+            'operating_hours', 'inventory_path', 'structured_identity',
+            'context_type', 'schedule_start', 'schedule_end',
+            'proxy', 'session_data', 'last_log'
+        }
+        entries = [(col, payload[col]) for col in payload if col in allowed]
+        if not entries:
+            return 0
+
+        columns = ', '.join(f"{col} = ?" for col, _ in entries)
+        values = [1 if col == 'bot_enabled' and isinstance(val, bool) else val for col, val in entries]
+
+        if cliente_id is not None:
+            sql = f"UPDATE settings SET {columns} WHERE id = ? AND cliente_id = ?"
+            values.extend([account_id, cliente_id])
+        else:
+            sql = f"UPDATE settings SET {columns} WHERE id = ?"
+            values.append(account_id)
+
         with self.get_connection() as conn:
-            conn.execute("UPDATE settings SET bot_enabled = ? WHERE id = ?", (1 if estado else 0, account_id))
+            cursor = conn.execute(sql, tuple(values))
             conn.commit()
+            return cursor.rowcount
+
+    def get_settings(self, account_id=None, cliente_id=None):
+        """Retorna la configuración de cuenta, incluyendo los campos nuevos.
+
+        Si no existen los campos nuevos en una cuenta antigua, se devuelven valores por defecto.
+        """
+        if account_id is not None:
+            account = self.get_account_by_id(account_id, cliente_id)
+            if account is None:
+                return None
+            account.setdefault('bot_role', '')
+            account.setdefault('business_name', '')
+            account.setdefault('business_data', '')
+            account.setdefault('operating_hours', '')
+            account.setdefault('inventory_path', '')
+            account.setdefault('structured_identity', '')
+            return account
+
+        cuentas = self.obtener_cuentas(cliente_id)
+        for cuenta in cuentas:
+            cuenta.setdefault('bot_role', '')
+            cuenta.setdefault('business_name', '')
+            cuenta.setdefault('business_data', '')
+            cuenta.setdefault('operating_hours', '')
+            cuenta.setdefault('inventory_path', '')
+            cuenta.setdefault('structured_identity', '')
+        return cuentas
+
+    def save_settings(self, account_id, changes, cliente_id=None):
+        """Guarda cambios en la configuración de cuenta, respetando campos nuevos y antiguos."""
+        return self.update_settings(account_id, changes, cliente_id)
+
+    def save_account(self, account_id, data, cliente_id=None):
+        """Inserta o actualiza una cuenta según si account_id ya existe."""
+        if account_id:
+            return self.update_settings(account_id, data, cliente_id)
+        self.agregar_cuenta(data, cliente_id)
+        return 1
+
+    def get_account_by_id(self, account_id, cliente_id=None):
+        with self.get_connection() as conn:
+            if cliente_id is not None:
+                row = conn.execute(
+                    "SELECT * FROM settings WHERE id = ? AND cliente_id = ?",
+                    (account_id, cliente_id)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM settings WHERE id = ?",
+                    (account_id,)
+                ).fetchone()
+            account = dict(row) if row else None
+            return self._normalize_account_role(account)
+
+    def get_account_state(self, account_id, cliente_id=None):
+        account = self.get_account_by_id(account_id, cliente_id)
+        if not account:
+            return None
+
+        target_cliente_id = cliente_id if cliente_id is not None else account.get('cliente_id', '')
+        now = datetime.now()
+        paused_threads = []
+
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT status, paused_until FROM chat_status WHERE cliente_id = ?",
+                (target_cliente_id,)
+            ).fetchall()
+
+        for row in rows:
+            status = row['status']
+            paused_until = row['paused_until']
+            active = False
+            if paused_until:
+                try:
+                    until = datetime.fromisoformat(paused_until)
+                    if now < until:
+                        active = True
+                except Exception:
+                    active = status in ('PAUSED', 'MANUAL')
+            elif status in ('PAUSED', 'MANUAL'):
+                active = True
+
+            if active:
+                paused_threads.append({
+                    'status': status,
+                    'paused_until': paused_until,
+                })
+
+        return {
+            'bot_enabled': bool(account.get('bot_enabled')),
+            'pause_active': bool(paused_threads),
+            'paused_threads': paused_threads,
+            'cliente_id': target_cliente_id,
+        }
+
+    def clear_account_pauses(self, account_id, cliente_id=None):
+        account = self.get_account_by_id(account_id, cliente_id)
+        if not account:
+            return 0
+
+        target_cliente_id = cliente_id if cliente_id is not None else account.get('cliente_id', '')
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE chat_status SET status = 'ACTIVE', paused_until = NULL "
+                "WHERE cliente_id = ? AND status IN ('PAUSED', 'MANUAL')",
+                (target_cliente_id,)
+            )
+            conn.commit()
+            return cursor.rowcount
 
     def actualizar_log(self, account_id, mensaje):
         """Actualiza la línea de log en cian de la tarjeta."""
@@ -252,7 +489,8 @@ class LocalDBService:
                     "SELECT * FROM settings WHERE insta_user = ?",
                     (insta_user,)
                 ).fetchone()
-            return dict(row) if row else None
+            account = dict(row) if row else None
+            return self._normalize_account_role(account)
 
     def get_thread_status(self, thread_id, cliente_id=None):
         with self.get_connection() as conn:

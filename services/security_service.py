@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 from cryptography.fernet import Fernet
 
 class SecurityService:
@@ -24,3 +25,11 @@ class SecurityService:
             return self.fernet.decrypt(encrypted_text.encode()).decode()
         except Exception:
             return None
+
+    def verify_password(self, candidate, expected):
+        if candidate is None or expected is None:
+            return False
+        try:
+            return hmac.compare_digest(candidate, expected)
+        except Exception:
+            return False

@@ -1,6 +1,8 @@
 import sys
+from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-                             QPushButton, QStackedWidget, QLabel, QFrame)
+                             QPushButton, QStackedWidget, QLabel, QFrame,
+                             QDialog, QLineEdit, QDialogButtonBox, QMessageBox)
 from PyQt6.QtCore import Qt, QSize
 import qtawesome as qta # Asegúrate de tenerlo instalado: pip install qtawesome
 
@@ -21,6 +23,8 @@ class MainWindow(QMainWindow):
         self.user_data = None
         self.security_service = SecurityService(self.hwid)
         self.current_cliente_id = self.cliente_data.get('id') if self.cliente_data else None
+        self.last_admin_unlock = None
+        self.admin_session_duration = timedelta(minutes=5)
         
         self.setWindowTitle("Pegasus Desktop - Instagram Chat")
         self.resize(1100, 700)
@@ -69,7 +73,7 @@ class MainWindow(QMainWindow):
         )
         self.insta_controller.set_main_controller(self.main_controller)
 
-        self.accounts_page = InstagramAccountsPage(self.insta_controller)
+        self.accounts_page = InstagramAccountsPage(self.insta_controller, main_window=self)
         self.insta_controller.set_view(self.accounts_page, self.current_cliente_id)
 
         # Añadir al stack
@@ -166,6 +170,27 @@ class MainWindow(QMainWindow):
         # IMPORTANTE: Añadir el sidebar al layout principal
         self.layout_principal.addWidget(self.sidebar)
 
+    def is_admin_clearance_active(self):
+        if not self.last_admin_unlock:
+            return False
+        return (datetime.now() - self.last_admin_unlock) < self.admin_session_duration
+
+    def request_admin_clearance(self, parent=None):
+        if self.is_admin_clearance_active():
+            return True
+
+        expected_password = self.cliente_data.get('password') if self.cliente_data else ''
+        if not expected_password:
+            QMessageBox.warning(self, "Acceso restringido", "No hay una contraseña de sesión válida configurada.")
+            return False
+
+        dialog = SecurityGate(parent or self, expected_password)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.last_admin_unlock = datetime.now()
+            return True
+
+        return False
+
     def show_page(self, index):
         if index == 1 and hasattr(self, 'accounts_page'):
             self.accounts_page.controller.refresh(self.current_cliente_id)
@@ -184,3 +209,51 @@ class MainWindow(QMainWindow):
         self.btn_home.style().polish(self.btn_home)
         self.btn_accounts.style().unpolish(self.btn_accounts)
         self.btn_accounts.style().polish(self.btn_accounts)
+
+
+class SecurityGate(QDialog):
+    def __init__(self, parent=None, expected_password=''):
+        super().__init__(parent)
+        self.expected_password = expected_password
+        self.setWindowTitle("Verificación Administrativa")
+        self.setFixedSize(380, 180)
+        self.setObjectName("ModernDialog")
+
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(18, 18, 18, 18)
+        self.layout.setSpacing(12)
+
+        self.title = QLabel("Contraseña requerida")
+        self.title.setStyleSheet("color: #FFFFFF; font-size: 16px; font-weight: 800;")
+        self.layout.addWidget(self.title)
+
+        self.description = QLabel("Para modificar la configuración, ingresa la contraseña de Pegasus.")
+        self.description.setWordWrap(True)
+        self.description.setStyleSheet("color: #CCCCCC; font-size: 11px;")
+        self.layout.addWidget(self.description)
+
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setPlaceholderText("Contraseña de Pegasus")
+        self.password_input.setStyleSheet(
+            "background-color: #161616; color: #FFFFFF; border: 1px solid #333; padding: 10px; border-radius: 6px;"
+        )
+        self.layout.addWidget(self.password_input)
+
+        self.message_label = QLabel("")
+        self.message_label.setStyleSheet("color: #FF6666; font-size: 11px;")
+        self.layout.addWidget(self.message_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._validate_password)
+        buttons.rejected.connect(self.reject)
+        self.layout.addWidget(buttons)
+
+    def _validate_password(self):
+        candidate = self.password_input.text().strip()
+        if candidate and candidate == self.expected_password:
+            self.accept()
+        else:
+            self.message_label.setText("Contraseña incorrecta. Intenta nuevamente.")
+            self.password_input.clear()
+            self.password_input.setFocus()

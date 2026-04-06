@@ -3,6 +3,7 @@ import os
 import time
 import random
 import logging
+import json
 import requests
 from collections import deque
 from datetime import datetime, timedelta
@@ -18,7 +19,9 @@ except ImportError:
     pass
 
 from instagrapi import Client
-from instagrapi.exceptions import ChallengeRequired, FeedbackRequired, RateLimitError, ClientConnectionError, UserNotFound
+import instagrapi.extractors as extractors
+import instagrapi.mixins.direct as direct_mixin
+from instagrapi.exceptions import ChallengeRequired, FeedbackRequired, RateLimitError, ClientConnectionError, UserNotFound, DirectThreadNotFound
 from services.database_service import db
 from core.ai_engine import AIService
 
@@ -34,17 +37,71 @@ class InstagramService:
         self.rescue_callback = None
         self.last_profile_error = None
         self.security_service = None
+        self.initial_session_data = None
         self.bot_sent_messages = deque(maxlen=1000)
         self.bot_sent_message_ids = set()
         self.muted_threads = {}
         self._last_rescue_check = None
         self.cliente_id = None
+        self.session_ready_callback = None
+        self._chat_switch_delay = (1.0, 3.0)
+        self._response_delay = (10.0, 18.0)
+        self._idle_cycle_delay = (6.0, 12.0)
         os.makedirs("sessions", exist_ok=True)
+        self._patch_instagrapi_direct_thread_extractor()
+
+    def _patch_instagrapi_direct_thread_extractor(self):
+        try:
+            original_extract_direct_thread = extractors.extract_direct_thread
+
+            def safe_extract_direct_thread(data):
+                if isinstance(data, dict):
+                    defaults = {
+                        "admin_user_ids": data.get("admin_user_ids", []),
+                        "muted": data.get("muted", False),
+                        "named": data.get("named", False),
+                        "canonical": data.get("canonical", False),
+                        "pending": data.get("pending", False),
+                        "archived": data.get("archived", False),
+                        "thread_type": data.get("thread_type", ""),
+                        "thread_title": data.get("thread_title", ""),
+                        "folder": data.get("folder", 0),
+                        "vc_muted": data.get("vc_muted", False),
+                        "is_group": data.get("is_group", False),
+                        "mentions_muted": data.get("mentions_muted", False),
+                        "approval_required_for_new_members": data.get("approval_required_for_new_members", False),
+                        "input_mode": data.get("input_mode", 0),
+                        "business_thread_folder": data.get("business_thread_folder", 0),
+                        "read_state": data.get("read_state", 0),
+                        "is_close_friend_thread": data.get("is_close_friend_thread", False),
+                        "assigned_admin_id": data.get("assigned_admin_id", 0),
+                        "shh_mode_enabled": data.get("shh_mode_enabled", False),
+                        "last_seen_at": data.get("last_seen_at", {}),
+                    }
+                    for key, value in defaults.items():
+                        if key not in data:
+                            data[key] = value
+                return original_extract_direct_thread(data)
+
+            if getattr(extractors.extract_direct_thread, "_pegasus_patched", False) is not True:
+                safe_extract_direct_thread._pegasus_patched = True
+                extractors.extract_direct_thread = safe_extract_direct_thread
+
+            if getattr(direct_mixin.extract_direct_thread, "_pegasus_patched", False) is not True:
+                direct_mixin.extract_direct_thread = safe_extract_direct_thread
+        except Exception:
+            pass
 
     def set_cliente_id(self, cliente_id):
         self.cliente_id = cliente_id
         if hasattr(self.ai, 'set_cliente_id'):
             self.ai.set_cliente_id(cliente_id)
+
+    def get_average_next_chat_delay(self):
+        return (self._chat_switch_delay[0] + self._chat_switch_delay[1]) / 2
+
+    def get_next_chat_delay_range(self):
+        return self._chat_switch_delay
 
     def _session_file_for_user(self, user):
         safe_user = "".join(c for c in user if c.isalnum() or c in "_-.").lower()
@@ -60,6 +117,9 @@ class InstagramService:
 
     def set_rescue_callback(self, callback_func):
         self.rescue_callback = callback_func
+
+    def set_session_ready_callback(self, callback_func):
+        self.session_ready_callback = callback_func
 
     def set_licencia_id(self, licencia_id):
         self.ai.set_licencia_id(licencia_id)
@@ -91,6 +151,73 @@ class InstagramService:
         except Exception:
             return None
 
+    def _parse_structured_identity(self, raw_value):
+        if not raw_value:
+            return {}
+        if isinstance(raw_value, dict):
+            return raw_value
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return {}
+
+    def _build_account_system_prompt(self, account_settings):
+        prompt_parts = []
+        if account_settings is None:
+            return None
+
+        base = account_settings.get('system_prompt')
+        if base:
+            prompt_parts.append(base)
+        else:
+            prompt_parts.append(
+                "Eres Pegasus, un asistente profesional de ventas y atención al cliente. "
+                "Responde como el encargado digital de la tienda y no admitas ser un bot."
+            )
+
+        role = account_settings.get('bot_role')
+        if role:
+            prompt_parts.append(f"Tu rol asignado es: {role}.")
+
+        business_name = account_settings.get('business_name')
+        if business_name:
+            prompt_parts.append(f"Representas a la tienda: {business_name}.")
+
+        bot_name = account_settings.get('assistant_name') or account_settings.get('bot_name')
+        if bot_name:
+            prompt_parts.append(f"El asistente se presenta como {bot_name}.")
+
+        whatsapp_number = account_settings.get('whatsapp_number') or account_settings.get('whatsapp_contacto')
+        if whatsapp_number:
+            prompt_parts.append(f"Contacto de WhatsApp de la tienda: {whatsapp_number}.")
+
+        business_data = account_settings.get('business_data')
+        if business_data:
+            prompt_parts.append(f"Información operativa relevante: {business_data}.")
+
+        structured = self._parse_structured_identity(account_settings.get('structured_identity'))
+        if structured:
+            if structured.get('name'):
+                prompt_parts.append(f"Nombre de la ficha: {structured.get('name')}." )
+            if structured.get('bio'):
+                prompt_parts.append(f"Bio resumida: {structured.get('bio')}." )
+            if structured.get('style'):
+                prompt_parts.append(f"Estilo de comunicación: {structured.get('style')}." )
+
+        operating_hours = account_settings.get('operating_hours')
+        if operating_hours:
+            prompt_parts.append(f"Horario operativo registrado: {operating_hours}.")
+
+        if account_settings.get('schedule_start') and account_settings.get('schedule_end'):
+            prompt_parts.append(
+                f"El horario de atención oficial es de {account_settings.get('schedule_start')} a {account_settings.get('schedule_end')}.")
+
+        proxy = account_settings.get('proxy')
+        if proxy and proxy != 'Auto':
+            prompt_parts.append(f"Configuración de proxy: {proxy}.")
+
+        return "\n".join(prompt_parts)
+
     def _in_business_hours(self, start_time, end_time):
         start = self._parse_time_string(start_time)
         end = self._parse_time_string(end_time)
@@ -108,11 +235,50 @@ class InstagramService:
         if isinstance(timestamp, (int, float)):
             return datetime.fromtimestamp(timestamp)
         if isinstance(timestamp, str):
+            text = timestamp.strip()
+            if text.isdigit():
+                try:
+                    value = int(text)
+                    if value > 1_000_000_000_000_000:
+                        value /= 1_000_000
+                    elif value > 1_000_000_000_000:
+                        value /= 1_000
+                    return datetime.fromtimestamp(value)
+                except Exception:
+                    pass
             try:
-                return datetime.fromisoformat(timestamp)
+                value = float(text)
+                return datetime.fromtimestamp(value)
             except Exception:
                 pass
+            try:
+                return datetime.fromisoformat(text)
+            except Exception:
+                try:
+                    return datetime.fromisoformat(text.replace('Z', '+00:00'))
+                except Exception:
+                    pass
         return None
+
+    def _get_time_context(self, thread_status):
+        if not thread_status:
+            return "NEW_SESSION"
+        last_processed = thread_status.get('last_processed_at')
+        if not last_processed:
+            return "NEW_SESSION"
+        try:
+            last_time = datetime.fromisoformat(str(last_processed))
+        except Exception:
+            try:
+                last_time = datetime.fromisoformat(str(last_processed).replace('Z', '+00:00'))
+            except Exception:
+                return "NEW_SESSION"
+        delta = datetime.now() - last_time
+        if delta < timedelta(hours=4):
+            return "CONTINUOUS"
+        if delta <= timedelta(days=7):
+            return "RE_ENCOUNTER"
+        return "NEW_SESSION"
 
     def _get_message_id(self, msg):
         return getattr(msg, 'id', None) or getattr(msg, 'item_id', None) or getattr(msg, 'client_context', None) or str(getattr(msg, 'timestamp', ''))
@@ -191,10 +357,21 @@ class InstagramService:
 
         for row in paused_rows:
             thread_id = row['thread_id']
-            last_manual_at = row.get('last_manual_at')
+            last_manual_at = row['last_manual_at'] if 'last_manual_at' in row.keys() else None
             try:
                 thread_fetcher = getattr(self.cl, 'direct_thread', None)
-                thread = self.cl.direct_thread(thread_id) if callable(thread_fetcher) else None
+                if callable(thread_fetcher):
+                    try:
+                        thread = self.cl.direct_thread(thread_id)
+                    except DirectThreadNotFound as e:
+                        logging.warning(f"[RESCATE] Hilo {thread_id} no encontrado al verificar abandono humano: {e}")
+                        continue
+                    except Exception as e:
+                        logging.warning(f"[RESCATE] Error al obtener hilo {thread_id}: {e}")
+                        continue
+                else:
+                    thread = None
+
                 if not thread:
                     continue
 
@@ -309,6 +486,11 @@ class InstagramService:
                     if validate_session():
                         session_data = self.cl.get_settings()
                         self._ui_log(f"✅ Sesión restaurada desde datos cifrados para @{user}.")
+                        if self.session_ready_callback:
+                            try:
+                                self.session_ready_callback(session_data)
+                            except Exception:
+                                pass
                         return session_data
                 except Exception as e:
                     self._ui_log(f"⚠️ No se pudo restaurar la sesión cifrada: {e}")
@@ -320,6 +502,11 @@ class InstagramService:
                 if validate_session():
                     session_data = self.cl.get_settings()
                     self._ui_log(f"✅ Sesión recuperada exitosamente desde archivo para @{user}.")
+                    if self.session_ready_callback:
+                        try:
+                            self.session_ready_callback(session_data)
+                        except Exception:
+                            pass
                     return session_data
                 self._ui_log("⚠️ Sesión antigua expirada. Intentando re-login...")
                 os.remove(self.session_file)
@@ -336,6 +523,11 @@ class InstagramService:
             self.cl.dump_settings(self.session_file)
             session_data = self.cl.get_settings()
             self._ui_log("✅ Nuevo login exitoso y sesión guardada.")
+            if self.session_ready_callback:
+                try:
+                    self.session_ready_callback(session_data)
+                except Exception:
+                    pass
             return session_data
         except ChallengeRequired:
             self._ui_log("🚨 ¡DESAFÍO DETECTADO! Abre Instagram en tu móvil y aprueba el inicio.")
@@ -360,7 +552,12 @@ class InstagramService:
             account_settings = db.get_account_by_username(user.strip(), self.cliente_id)
 
         if not skip_login:
-            session_data = self.login(user, pw, security_service=self.security_service)
+            session_data = self.login(
+                user,
+                pw,
+                session_data_encrypted=self.initial_session_data,
+                security_service=self.security_service,
+            )
             if not session_data:
                 self._ui_log("❌ El motor se ha detenido. Revisa la configuración.")
                 self.is_running = False
@@ -377,6 +574,7 @@ class InstagramService:
         else:
             self._ui_log("⚠️ No se encontró configuración de cuenta para el usuario de login. El bot continuará sin ajustes específicos.")
 
+        self.account_system_prompt = self._build_account_system_prompt(account_settings)
         self._check_local_ip_security(account_settings)
         self._apply_proxy_logic(None)
         ciclos_sin_mensajes = 0
@@ -463,15 +661,35 @@ class InstagramService:
                         self._ui_log("⏳ Simulando escritura natural...")
                         if account_id:
                             self._update_account_log(account_id, "⏳ Simulando escritura natural...")
-                        time.sleep(random.uniform(20, 45))
+                        time.sleep(random.uniform(*self._response_delay))
 
                         user_text = getattr(last_msg, 'text', '') or getattr(last_msg, 'message', '') or ''
                         if not user_text:
                             self._ui_log(f"⚠️ Mensaje del hilo {thread.id} no tiene texto. Se omite.")
                             continue
 
+                        if account_id:
+                            latest_settings = db.get_account_by_id(account_id, self.cliente_id)
+                            if latest_settings:
+                                account_settings = latest_settings
+                                self.account_system_prompt = self._build_account_system_prompt(account_settings)
+
+                        account_settings = account_settings or {}
+                        time_context = self._get_time_context(thread_status)
+                        bot_name = account_settings.get('assistant_name') or account_settings.get('bot_name') or account_settings.get('business_name') or "Alex"
+                        whatsapp_contacto = account_settings.get('whatsapp_number') or account_settings.get('whatsapp_contacto') or ""
+
                         try:
-                            respuesta = self.ai.generate_response(user_text, thread.id)
+                            respuesta = self.ai.generate_response(
+                                user_text,
+                                self.account_system_prompt,
+                                bot_role=account_settings.get('bot_role') or account_settings.get('context_type'),
+                                business_profile=account_settings.get('business_data') or account_settings.get('description') or account_settings.get('store_name'),
+                                inventory_path=account_settings.get('inventory_path'),
+                                bot_name=bot_name,
+                                whatsapp_contacto=whatsapp_contacto,
+                                time_context=time_context
+                            )
                         except RuntimeError as e:
                             self._ui_log(f"🚫 No se puede generar respuesta para hilo {thread.id}: {e}")
                             if account_id:
@@ -507,7 +725,7 @@ class InstagramService:
                         db.mark_thread_processed(thread.id, message_id, cliente_id=self.cliente_id)
 
                         if len(threads) > 1:
-                            delay_minutes = random.uniform(2, 5)
+                            delay_minutes = random.uniform(*self._chat_switch_delay)
                             self._ui_log(f"🚶 Saltando al siguiente cliente en {int(delay_minutes)} minutos...")
                             if account_id:
                                 self._update_account_log(account_id, f"🚶 Saltando al siguiente cliente en {int(delay_minutes)} minutos...")
@@ -527,7 +745,7 @@ class InstagramService:
                 time.sleep(300)
             except Exception as e:
                 logging.error(f"Error crítico en motor principal: {e}")
-            time.sleep(random.uniform(12, 22))
+            time.sleep(random.uniform(*self._idle_cycle_delay))
 
 
     def stop(self):
@@ -670,24 +888,80 @@ class InstagramService:
                 logging.warning(f"Error inesperado al obtener medias del usuario {user_id}: {e}")
                 return []
 
+    def _extract_brand_name(self, username, full_name, biography):
+        if full_name:
+            return full_name.strip()
+        if biography:
+            first_line = biography.strip().split('\n')[0]
+            if len(first_line) < 60 and any(word in first_line.lower() for word in ['tienda', 'store', 'brand', 'shop', 'salon', 'café', 'cafe', 'restaurante', 'boutique']):
+                return first_line
+        return username.capitalize() if username else ''
+
+    def _extract_value_proposition(self, biography, captions):
+        text = ' '.join([biography or ''] + captions).lower()
+        if not text.strip():
+            return "Ofrece soluciones prácticas a sus clientes con un enfoque profesional."
+
+        if any(k in text for k in ['comida', 'delivery', 'restaurante', 'café', 'cafe', 'bar']):
+            return "Ofrece comida y experiencias gastronómicas rápidas y sabrosas."
+        if any(k in text for k in ['moda', 'ropa', 'fashion', 'estilo', 'look']):
+            return "Vende moda y estilo para quienes buscan una propuesta actualizada."
+        if any(k in text for k in ['belleza', 'spa', 'maquillaje', 'estética', 'cuidados']):
+            return "Brinda servicios de belleza y cuidado personal con un enfoque elegante."
+        if any(k in text for k in ['digital', 'marketing', 'branding', 'social media', 'consultor']):
+            return "Ayuda a negocios a crecer con servicios digitales y de marketing estratégico."
+        if any(k in text for k in ['decoración', 'muebles', 'interiores', 'hogar']):
+            return "Diseña espacios y productos para el hogar con buen gusto y funcionalidad."
+        if any(k in text for k in ['handmade', 'artesanal', 'hecho a mano', 'artesanía']):
+            return "Ofrece productos artesanales hechos con dedicación y estilo propio."
+        if any(k in text for k in ['consultoría', 'asesoría', 'servicios', 'coaching', 'planificación']):
+            return "Brinda servicios profesionales diseñados para resolver necesidades específicas."
+        if any(k in text for k in ['entrenamiento', 'fitness', 'bienestar', 'salud', 'yoga']):
+            return "Ofrece entrenamientos y programas de bienestar para mejorar la calidad de vida."
+
+        return "Comparte y ofrece productos o servicios relevantes para su público con un estilo claro y cercano."
+
+    def _detect_tone(self, biography, captions):
+        text = ' '.join([biography or ''] + captions).lower()
+        if not text.strip():
+            return "Profesional y directo"
+
+        if any(k in text for k in ['urgente', 'oferta', 'ahora', 'última', 'solo hoy', 'promoción', 'descuento']):
+            return "Urgente y comercial"
+        if any(k in text for k in ['exclusivo', 'lujo', 'premium', 'elite', 'elegante']):
+            return "Premium y elegante"
+        if any(k in text for k in ['amigable', 'cariño', 'nos encanta', 'sonríe', 'divertido', 'alegre']):
+            return "Cálido y cercano"
+        if any(k in text for k in ['creativo', 'inspirador', 'arte', 'diseño', 'innovador']):
+            return "Creativo y moderno"
+        if any(k in text for k in ['rápido', 'fácil', 'confiable', 'eficaz']):
+            return "Ágil y confiable"
+
+        return "Profesional y conversacional"
+
     def analyze_profile(self, username):
         """Extrae el ADN de la tienda desde el perfil público de Instagram."""
         username = (username or "").strip().lstrip('@')
         if not username:
             return {
                 "username": "",
-                "full_name": "",
+                "brand_name": "",
+                "value_proposition": "",
+                "tone_detected": "",
                 "biography": "",
                 "category_name": "",
-                "recent_captions": []
+                "recent_captions": [],
+                "error": "missing_username"
             }
 
         try:
             usuario = self._safe_fetch_profile(username)
             if not usuario:
                 return {
-                    "username": "",
-                    "full_name": "",
+                    "username": username,
+                    "brand_name": username.capitalize(),
+                    "value_proposition": "",
+                    "tone_detected": "",
                     "biography": "",
                     "category_name": "",
                     "recent_captions": [],
@@ -700,18 +974,28 @@ class InstagramService:
                 caption = getattr(media, "caption_text", None) or getattr(media, "caption", None) or ""
                 if caption:
                     captions.append(caption)
+
+            biography = usuario.biography or ""
+            brand_name = self._extract_brand_name(username, usuario.full_name or "", biography)
+            value_proposition = self._extract_value_proposition(biography, captions)
+            tone_detected = self._detect_tone(biography, captions)
+
             return {
                 "username": username,
-                "full_name": usuario.full_name or "",
-                "biography": usuario.biography or "",
+                "brand_name": brand_name,
+                "value_proposition": value_proposition,
+                "tone_detected": tone_detected,
+                "biography": biography,
                 "category_name": usuario.category_name or "",
                 "recent_captions": captions[:3]
             }
         except Exception as e:
             logging.warning(f"Error al analizar perfil @{username}: {e}")
             return {
-                "username": "",
-                "full_name": "",
+                "username": username,
+                "brand_name": username.capitalize(),
+                "value_proposition": "",
+                "tone_detected": "",
                 "biography": "",
                 "category_name": "",
                 "recent_captions": []

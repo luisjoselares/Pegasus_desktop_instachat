@@ -3,7 +3,7 @@ import random
 import subprocess
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit, 
-                             QPushButton, QMessageBox, QApplication)
+                             QPushButton, QMessageBox, QApplication, QStackedWidget)
 from PyQt6.QtCore import Qt
 from services.cloud_service import registrar_nuevo_usuario, sincronizar_aplicacion
 
@@ -18,66 +18,159 @@ class RegisterWizard(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.layout = QVBoxLayout()
-        self.layout.setSpacing(12)
-        self.layout.setContentsMargins(30, 40, 30, 40)
+        self.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+            }
+            QLabel#MainTitle {
+                font-size: 28px;
+                font-weight: 900;
+                color: #FFFFFF;
+                margin-bottom: 5px;
+            }
+            QLabel#SubTitle {
+                font-size: 14px;
+                color: #777777;
+                margin-bottom: 25px;
+            }
+            QLineEdit {
+                background-color: rgba(255, 255, 255, 0.03);
+                color: #FFFFFF;
+                font-size: 15px;
+                padding: 14px 10px;
+                border: none;
+                border-bottom: 1px solid #333333;
+                border-radius: 4px 4px 0 0;
+                margin-bottom: 10px;
+            }
+            QLineEdit:focus {
+                background-color: rgba(0, 229, 255, 0.05);
+                border-bottom: 2px solid #00E5FF;
+            }
+            QPushButton#PrimaryPill {
+                background-color: #00E5FF;
+                color: #000000;
+                font-weight: 800;
+                font-size: 15px;
+                padding: 16px;
+                border-radius: 24px;
+                border: none;
+                margin-top: 15px;
+            }
+            QPushButton#PrimaryPill:hover {
+                background-color: #00B3CC;
+            }
+            QPushButton#FlatLink {
+                background-color: transparent;
+                color: #777777;
+                font-size: 13px;
+                border: none;
+                margin-top: 10px;
+            }
+            QPushButton#FlatLink:hover {
+                color: #FFFFFF;
+                text-decoration: underline;
+            }
+            QLineEdit#OtpBigField {
+                font-size: 32px;
+                letter-spacing: 15px;
+                text-align: center;
+                font-weight: bold;
+                padding: 20px;
+                border-bottom: 2px solid #555555;
+            }
+            QLineEdit#OtpBigField:focus {
+                border-bottom: 2px solid #00E5FF;
+            }
+        """)
 
-        title = QLabel("CREAR CUENTA PEGASUS")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #00E5FF;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(title)
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(40, 60, 40, 60)
+        self.layout.setSpacing(0)
 
-        # Campos de Datos
+        self.stacked_widget = QStackedWidget()
+        self.layout.addWidget(self.stacked_widget)
+
+        self.page_form = QWidget()
+        form_layout = QVBoxLayout(self.page_form)
+        form_layout.setSpacing(16)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+
+        title = QLabel("Inicia tu imperio.")
+        title.setObjectName("MainTitle")
+        form_layout.addWidget(title)
+
+        subtitle = QLabel("Crea tu cuenta de administrador.")
+        subtitle.setObjectName("SubTitle")
+        form_layout.addWidget(subtitle)
+
         self.txt_nombre = QLineEdit()
         self.txt_nombre.setPlaceholderText("Nombre Completo")
-        self.layout.addWidget(self.txt_nombre)
+        form_layout.addWidget(self.txt_nombre)
 
         self.txt_email = QLineEdit()
         self.txt_email.setPlaceholderText("Correo Electrónico")
-        self.layout.addWidget(self.txt_email)
+        form_layout.addWidget(self.txt_email)
 
         self.txt_pass = QLineEdit()
         self.txt_pass.setPlaceholderText("Contraseña (mín. 6 caracteres)")
         self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self.layout.addWidget(self.txt_pass)
+        form_layout.addWidget(self.txt_pass)
 
         self.txt_pass_confirm = QLineEdit()
         self.txt_pass_confirm.setPlaceholderText("Confirmar Contraseña")
         self.txt_pass_confirm.setEchoMode(QLineEdit.EchoMode.Password)
-        self.layout.addWidget(self.txt_pass_confirm)
+        form_layout.addWidget(self.txt_pass_confirm)
 
-        # Sección OTP
-        self.otp_container = QWidget()
-        otp_layout = QVBoxLayout(self.otp_container)
-        otp_layout.setContentsMargins(0, 10, 0, 10)
-        
-        lbl_info = QLabel("Introduce el código enviado a tu correo:")
-        lbl_info.setStyleSheet("color: #00E5FF; font-size: 11px;")
+        self.btn_continuar = QPushButton("Continuar")
+        self.btn_continuar.setObjectName("PrimaryPill")
+        self.btn_continuar.clicked.connect(self.enviar_codigo_registro)
+        form_layout.addWidget(self.btn_continuar)
+
+        self.btn_volver_form = QPushButton("Ya tengo cuenta. Iniciar sesión")
+        self.btn_volver_form.setObjectName("FlatLink")
+        self.btn_volver_form.clicked.connect(self.limpiar_y_volver)
+        form_layout.addWidget(self.btn_volver_form)
+
+        form_layout.addStretch()
+        self.stacked_widget.addWidget(self.page_form)
+
+        self.page_otp = QWidget()
+        otp_layout = QVBoxLayout(self.page_otp)
+        otp_layout.setSpacing(16)
+        otp_layout.setContentsMargins(0, 0, 0, 0)
+
+        otp_title = QLabel("Revisa tu bandeja.")
+        otp_title.setObjectName("MainTitle")
+        otp_layout.addWidget(otp_title)
+
+        otp_subtitle = QLabel("Ingresa el código maestro enviado a tu correo.")
+        otp_subtitle.setObjectName("SubTitle")
+        otp_layout.addWidget(otp_subtitle)
+
         self.txt_otp = QLineEdit()
-        self.txt_otp.setPlaceholderText("Código de 6 dígitos")
+        self.txt_otp.setObjectName("OtpBigField")
+        self.txt_otp.setPlaceholderText("000000")
         self.txt_otp.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.txt_otp.setStyleSheet("font-size: 18px; letter-spacing: 5px;")
-        
-        otp_layout.addWidget(lbl_info)
         otp_layout.addWidget(self.txt_otp)
-        self.otp_container.setVisible(False)
-        self.layout.addWidget(self.otp_container)
 
-        # Botones
-        self.btn_main = QPushButton("ENVIAR CÓDIGO DE VERIFICACIÓN")
-        self.btn_main.clicked.connect(self.gestionar_flujo_registro)
-        self.layout.addWidget(self.btn_main)
+        self.btn_validar = QPushButton("Activar Cuenta")
+        self.btn_validar.setObjectName("PrimaryPill")
+        self.btn_validar.clicked.connect(self.validar_codigo_registro)
+        otp_layout.addWidget(self.btn_validar)
 
-        self.btn_reenviar = QPushButton("Reenviar Código")
-        self.btn_reenviar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reenviar = QPushButton("¿No llegó? Reenviar código")
+        self.btn_reenviar.setObjectName("FlatLink")
         self.btn_reenviar.clicked.connect(self.reenviar_codigo)
-        self.btn_reenviar.setVisible(False)
-        self.layout.addWidget(self.btn_reenviar)
+        otp_layout.addWidget(self.btn_reenviar)
 
-        btn_back = QPushButton("Volver al Login")
-        btn_back.setStyleSheet("background: transparent; color: #888888; border: none;")
-        btn_back.clicked.connect(self.limpiar_y_volver)
-        self.layout.addWidget(btn_back)
+        self.btn_volver_otp = QPushButton("Ya tengo cuenta. Iniciar sesión")
+        self.btn_volver_otp.setObjectName("FlatLink")
+        self.btn_volver_otp.clicked.connect(self.limpiar_y_volver)
+        otp_layout.addWidget(self.btn_volver_otp)
+
+        otp_layout.addStretch()
+        self.stacked_widget.addWidget(self.page_otp)
 
         self.setLayout(self.layout)
 
@@ -88,62 +181,55 @@ class RegisterWizard(QWidget):
         except: 
             return "ID-DESCONOCIDO"
 
-    def gestionar_flujo_registro(self):
-        if not self.generated_otp:
-            nombre = self.txt_nombre.text().strip()
-            email = self.txt_email.text().strip().lower()
-            pw = self.txt_pass.text()
-            pw_c = self.txt_pass_confirm.text()
+    def enviar_codigo_registro(self):
+        nombre = self.txt_nombre.text().strip()
+        email = self.txt_email.text().strip().lower()
+        pw = self.txt_pass.text()
+        pw_c = self.txt_pass_confirm.text()
 
-            # Validaciones de entrada
-            if not all([nombre, email, pw, pw_c]):
-                QMessageBox.warning(self, "Campos Vacíos", "Todos los campos son obligatorios.")
-                return
-            
-            if len(pw) < 6:
-                QMessageBox.warning(self, "Contraseña Corta", "La contraseña debe tener al menos 6 caracteres.")
-                return
+        if not all([nombre, email, pw, pw_c]):
+            QMessageBox.warning(self, "Campos Vacíos", "Todos los campos son obligatorios.")
+            return
 
-            if pw != pw_c:
-                QMessageBox.warning(self, "Error de Clave", "Las contraseñas no coinciden.")
-                return
+        if len(pw) < 6:
+            QMessageBox.warning(self, "Contraseña Corta", "La contraseña debe tener al menos 6 caracteres.")
+            return
 
-            self.btn_main.setText("ENVIANDO...")
-            self.btn_main.setEnabled(False)
-            QApplication.processEvents()
+        if pw != pw_c:
+            QMessageBox.warning(self, "Error de Clave", "Las contraseñas no coinciden.")
+            return
 
-            # Llamamos al servicio central
-            otp = self.parent.enviar_email(
-                email, 
-                "Verificación de Cuenta", 
-                f"Hola {nombre}, bienvenido a Pegasus. Usa este código para completar tu registro:"
-            )
+        self.btn_continuar.setText("ENVIANDO...")
+        self.btn_continuar.setEnabled(False)
+        QApplication.processEvents()
 
-            if otp:
-                self.generated_otp = otp
-                self.otp_expiracion = datetime.now() + timedelta(minutes=5)
-                self.user_pending_data = {"nombre": nombre, "email": email, "pw": pw}
-                
-                self.txt_nombre.setEnabled(False)
-                self.txt_email.setEnabled(False)
-                self.txt_pass.setVisible(False)
-                self.txt_pass_confirm.setVisible(False)
-                self.otp_container.setVisible(True)
-                self.btn_reenviar.setVisible(True)
-                self.btn_main.setText("FINALIZAR REGISTRO")
-                self.btn_main.setEnabled(True)
-            else:
-                self.btn_main.setText("ENVIAR CÓDIGO DE VERIFICACIÓN")
-                self.btn_main.setEnabled(True)
+        otp = self.parent.enviar_email(
+            email,
+            "Verificación de Cuenta",
+            f"Hola {nombre}, bienvenido a Pegasus. Usa este código para completar tu registro:"
+        )
+
+        if otp:
+            self.generated_otp = otp
+            self.otp_expiracion = datetime.now() + timedelta(minutes=5)
+            self.user_pending_data = {"nombre": nombre, "email": email, "pw": pw}
+            self.btn_reenviar.setVisible(True)
+            self.btn_continuar.setText("Continuar")
+            self.btn_continuar.setEnabled(True)
+            self.stacked_widget.setCurrentIndex(1)
         else:
-            if getattr(self, 'otp_expiracion', None) and datetime.now() > self.otp_expiracion:
-                QMessageBox.warning(self, "Código vencido", "Código vencido. Por favor, solicita un nuevo código de verificación.")
-                return
+            self.btn_continuar.setText("Continuar")
+            self.btn_continuar.setEnabled(True)
 
-            if self.txt_otp.text().strip() == self.generated_otp:
-                self.registrar_en_supabase()
-            else:
-                QMessageBox.warning(self, "Error", "Código de verificación incorrecto.")
+    def validar_codigo_registro(self):
+        if getattr(self, 'otp_expiracion', None) and datetime.now() > self.otp_expiracion:
+            QMessageBox.warning(self, "Código vencido", "Código vencido. Por favor, solicita un nuevo código de verificación.")
+            return
+
+        if self.txt_otp.text().strip() == self.generated_otp:
+            self.registrar_en_supabase()
+        else:
+            QMessageBox.warning(self, "Error", "Código de verificación incorrecto.")
 
     def registrar_en_supabase(self):
         app_id = sincronizar_aplicacion("Bot_Instagram", "1.0.0")
@@ -187,13 +273,9 @@ class RegisterWizard(QWidget):
         self.generated_otp = None
         self.otp_expiracion = None
 
-        self.otp_container.setVisible(False)
         self.btn_reenviar.setVisible(False)
-        self.txt_nombre.setEnabled(True)
-        self.txt_email.setEnabled(True)
-        self.txt_pass.setVisible(True)
-        self.txt_pass_confirm.setVisible(True)
-        self.btn_main.setText("ENVIAR CÓDIGO DE VERIFICACIÓN")
-        self.btn_main.setEnabled(True)
+        self.btn_continuar.setText("Continuar")
+        self.btn_continuar.setEnabled(True)
+        self.stacked_widget.setCurrentIndex(0)
 
         self.parent.mostrar_login()

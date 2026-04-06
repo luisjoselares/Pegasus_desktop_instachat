@@ -101,6 +101,49 @@ QComboBox::down-arrow {
     background-color: #141414;
 }
 
+#ModernAccountCard[accountState="active"] {
+    border: 1px solid #2ECC71;
+    background-color: #101915;
+}
+
+#ModernAccountCard[accountState="paused"] {
+    border: 1px solid #FF8A00;
+    background-color: #141008;
+}
+
+#ModernAccountCard[accountState="inactive"] {
+    border: 1px solid #555555;
+    background-color: #101010;
+}
+
+QLabel#AccountStatusLed[status="active"] {
+    color: #3CE823;
+}
+
+QLabel#AccountStatusLed[status="paused"] {
+    color: #FFA500;
+}
+
+QLabel#AccountStatusLed[status="inactive"] {
+    color: #888888;
+}
+
+QLabel#AccountPauseInfo {
+    color: #FFA500;
+    font-size: 10px;
+}
+
+QPushButton#ForceActivateBtn, QPushButton#EditAccountBtn {
+    background-color: #141414;
+    border: 1px solid #222222;
+    border-radius: 10px;
+    color: #FFFFFF;
+}
+
+QPushButton#ForceActivateBtn:hover, QPushButton#EditAccountBtn:hover {
+    background-color: #1F1F1F;
+}
+
 #AccountTitle {
     font-size: 18px;
     font-weight: 800;
@@ -170,4 +213,146 @@ QScrollBar::handle:vertical {
 
 QScrollBar::handle:vertical:hover {
     background: #00E5FF;
+}
+QPushButton#WizardBackButton, QPushButton#WizardNextButton, QPushButton#WizardFinishButton {
+    background-color: #121212;
+    border: 1px solid #2A2A2A;
+    border-radius: 8px;
+    padding: 12px 18px;
+    color: #FFFFFF;
+    font-weight: 700;
+}
+
+QPushButton#WizardBackButton:hover, QPushButton#WizardNextButton:hover, QPushButton#WizardFinishButton:hover {
+    background-color: #00E5FF;
+    color: #000000;
+}
+
+QPushButton#WizardBackButton:disabled, QPushButton#WizardNextButton:disabled, QPushButton#WizardFinishButton:disabled {
+    background-color: #1A1A1A;
+    border-color: #333333;
+    color: #666666;
+}
+
+QPushButton#AttachInventoryButton {
+    background-color: #111111;
+    border: 1px solid #00E5FF;
+    border-radius: 12px;
+    padding: 14px;
+    color: #FFFFFF;
+    text-align: left;
+}
+
+QPushButton#AttachInventoryButton:hover {
+    background-color: #171717;
+}
+
+/* WIZARD MODERNO */
+#WizardProgressContainer {
+    background-color: transparent;
+    border-radius: 12px;
+    padding: 12px 0;
+}
+#WizardStepContainer {
+    background-color: #11111a;
+    border: 1px solid transparent;
+    padding: 12px 14px;
+    border-radius: 12px;
+    min-width: 100px;
+}
+#WizardStepContainer[active="true"] {
+    border-color: #6c5ce7;
+    background-color: #161626;
+}
+#WizardStepCircle {
+    background-color: #a5b1c2;
+    color: #0a0a0a;
+    font-weight: 900;
+    border-radius: 20px;
+    min-width: 36px;
+    min-height: 36px;
+    border: none;
+    font-size: 14px;
+    padding: 0;
+}
+#WizardStepContainer[active="true"] #WizardStepCircle {
+    background-color: #6c5ce7;
+    color: #ffffff;
+}
+#WizardStepLabel {
+    color: #a5b1c2;
+    font-size: 11px;
+    margin-top: 4px;
+}
+#WizardCard {
+    background-color: #10101c;
+    border: 1px solid #2a2a3a;
+    border-radius: 12px;
+}
+QLineEdit#UnderlineField, QTextEdit#UnderlineField {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #6c5ce7;
+    border-radius: 0;
+    padding-left: 0;
+    padding-right: 0;
+}
+QLineEdit#UnderlineField:focus, QTextEdit#UnderlineField:focus {
+    border-bottom: 1px solid #00E5FF;
+}
+QPushButton#PersonalityCard {
+    background-color: #0D0D0D;
+    border: 1px solid #2a2a3a;
+    border-radius: 8px;
+    min-height: 75px;
+    text-align: left;
+    padding: 12px 16px;
+    color: #FFFFFF;
+}
+QPushButton#PersonalityCard:hover {
+    background-color: #141414;
+    border: 1px solid #333333;
+}
+QPushButton#PersonalityCard[selected="true"] {
+    border-color: #00E5FF;
+    background-color: rgba(0, 229, 255, 0.05);
+}
+QPushButton#WizardCatalogButton {
+    background-color: #1A1A1A;
+    color: #ffffff;
+    border: 1px solid #333333;
+    border-radius: 12px;
+    padding: 14px 24px;
+    font-weight: 800;
+}
+QPushButton#WizardCatalogButton:hover {
+    background-color: #1A1A1A;
+    border: 1px solid #00E5FF;
+}
+#CatalogStatus {
+    color: #00E5FF;
+    font-size: 12px;
+}
+#WizardFooter {
+    background-color: transparent;
+    border-top: 1px solid #1a1a2a;
+    padding-top: 18px;
+}
+QPushButton#WizardBackButton, QPushButton#WizardNextButton, QPushButton#WizardFinishButton {
+    border-radius: 12px;
+    border: 1px solid #2a2a3a;
+    padding: 12px 22px;
+}
+QPushButton#WizardNextButton, QPushButton#WizardFinishButton {
+    background-color: #6c5ce7;
+    color: #ffffff;
+}
+QPushButton#WizardBackButton {
+    background-color: #12121e;
+    color: #a5b1c2;
+}
+QPushButton#WizardNextButton:disabled, QPushButton#WizardFinishButton:disabled {
+    background-color: #2a2a3a;
+    color: #666666;
+    border-color: #333333;
 }
