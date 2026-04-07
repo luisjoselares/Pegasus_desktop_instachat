@@ -1,9 +1,13 @@
 # controllers/instagram_controller.py
-from PyQt6.QtCore import QObject, pyqtSignal
+from os import path
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QUrl
+from PyQt6.QtMultimedia import QSoundEffect
 from services.instagram_service import InstagramService
 
 class InstagramController(QObject):
     configuration_updated = pyqtSignal()
+    handoff_alert = pyqtSignal(str, str)
+    signal_handoff_alert = pyqtSignal(str)
     """
     Controlador Senior para la gestión de cuentas de Instagram.
     Actúa como puente entre LocalDBService y la interfaz modernizada de Pegasus.
@@ -16,6 +20,13 @@ class InstagramController(QObject):
         self.security_service = security_service
         self.cliente_id = cliente_id
         self.main_controller = None
+        self.active_handoff_timers = {}
+        self.alerta_venta = QSoundEffect()
+        sound_file = path.join(path.dirname(__file__), '..', 'assets', 'sounds', 'alerta_venta.wav')
+        if path.exists(sound_file):
+            self.alerta_venta.setSource(QUrl.fromLocalFile(path.abspath(sound_file)))
+            self.alerta_venta.setVolume(0.8)
+
         if cliente_id and hasattr(self.engine, 'set_cliente_id'):
             self.engine.set_cliente_id(cliente_id)
 
@@ -165,6 +176,80 @@ class InstagramController(QObject):
         else:
             self.db.update_thread_status(thread_id, status='ACTIVE', cliente_id=self.cliente_id)
             print(f"Controlador: Hilo {thread_id} reactivado manualmente.")
+
+    def schedule_handoff(self, thread_id, username, response, whatsapp_contacto=""):
+        if not thread_id or not username:
+            return
+        self.mark_waiting_for_human(thread_id)
+        self._play_alert_sound()
+        self._append_handoff_log(thread_id, username, response)
+        self.signal_handoff_alert.emit(username)
+        self.handoff_alert.emit(thread_id, username)
+        if username in self.active_handoff_timers:
+            self.active_handoff_timers[username]['timer'].stop()
+            del self.active_handoff_timers[username]
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda tid=thread_id, user=username, resp=response, wa=whatsapp_contacto: self.execute_delayed_handoff(tid, user, resp, wa))
+        timer.start(180000)
+        self.active_handoff_timers[username] = {
+            'timer': timer,
+            'thread_id': thread_id,
+        }
+
+    def cancel_handoff_timer(self, username):
+        entry = self.active_handoff_timers.get(username)
+        if entry:
+            entry['timer'].stop()
+            thread_id = entry.get('thread_id')
+            del self.active_handoff_timers[username]
+            if thread_id:
+                self.db.update_thread_status(thread_id, status='ACTIVE', cliente_id=self.cliente_id)
+            print(f"Controlador: Temporizador de handoff cancelado para @{username}.")
+
+    def manual_send_occurred(self, username):
+        if username:
+            self.cancel_handoff_timer(username)
+            print(f"Controlador: Intervención humana detectada para @{username}, handoff cancelado.")
+
+    def execute_delayed_handoff(self, thread_id, username, response, whatsapp_contacto=""):
+        if username in self.active_handoff_timers:
+            del self.active_handoff_timers[username]
+
+        if not thread_id:
+            return
+
+        handoff_text = response or (
+            f"Ese detalle específico no lo tengo a la mano. Por favor escríbenos por WhatsApp: {whatsapp_contacto}."
+        )
+        if hasattr(self.engine, 'cl'):
+            try:
+                self.engine.cl.direct_send(handoff_text, thread_ids=[thread_id])
+            except Exception as exc:
+                print(f"Controlador: Error enviando handoff retrasado: {exc}")
+
+        self.db.pause_thread(thread_id, minutes=720, cliente_id=self.cliente_id, status='MANUAL')
+        print(f"Controlador: Handoff enviado tras 3 min de cortesía para @{username}. Bot en modo MANUAL.")
+        if self.view and hasattr(self.view, 'log_console'):
+            self.view.log_console.append(f"[HANDOFF] Handoff enviado tras 3 min de cortesía para @{username}. Bot en modo MANUAL.")
+        self.notify_owner_via_whatsapp(handoff_text)
+
+    def mark_waiting_for_human(self, thread_id):
+        self.db.update_thread_status(thread_id, status='WAITING_HUMAN', cliente_id=self.cliente_id)
+
+    def notify_owner_via_whatsapp(self, message):
+        # TODO: Integrar con API de WhatsApp para alertar al dueño del negocio.
+        pass
+
+    def _play_alert_sound(self):
+        if self.sound_effect and self.sound_effect.isAvailable():
+            self.sound_effect.play()
+
+    def _append_handoff_log(self, thread_id, username, response):
+        print(f"Controlador: Handoff detectado para @{username}. Se espera 3 minutos antes de redirigir.")
+        if self.view and hasattr(self.view, 'log_console'):
+            self.view.log_console.append(f"[HANDOFF] @{username} en WAITING_HUMAN. Redirección en 3 min si no hay intervención.")
 
     def get_conversation_history(self, thread_id):
         if not thread_id:

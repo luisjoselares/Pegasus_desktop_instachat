@@ -23,7 +23,7 @@ import instagrapi.extractors as extractors
 import instagrapi.mixins.direct as direct_mixin
 from instagrapi.exceptions import ChallengeRequired, FeedbackRequired, RateLimitError, ClientConnectionError, UserNotFound, DirectThreadNotFound
 from services.database_service import db
-from core.ai_engine import AIService
+from core.ai_engine import AIService, HANDOFF_PHRASE
 
 class InstagramService:
     def __init__(self):
@@ -194,6 +194,23 @@ class InstagramService:
         business_data = account_settings.get('business_data')
         if business_data:
             prompt_parts.append(f"Información operativa relevante: {business_data}.")
+
+        location = account_settings.get('location') or account_settings.get('ubicacion', '')
+        if location:
+            prompt_parts.append(f"Ubicación física o zona de atención: {location}.")
+        else:
+            if whatsapp_number:
+                prompt_parts.append(
+                    f"Si el cliente pregunta por la ubicación física, responde: No tenemos tienda física por ahora, pero atendemos de forma digital por WhatsApp {whatsapp_number}."
+                )
+            else:
+                prompt_parts.append(
+                    "Si el cliente pregunta por la ubicación física, responde: No tenemos tienda física por ahora, pero atendemos de forma digital por WhatsApp."
+                )
+
+        website = account_settings.get('website', '')
+        if website:
+            prompt_parts.append(f"Sitio web o catálogo online: {website}.")
 
         structured = self._parse_structured_identity(account_settings.get('structured_identity'))
         if structured:
@@ -651,7 +668,7 @@ class InstagramService:
                         username = thread.users[0].username if getattr(thread, 'users', None) else 'desconocido'
 
                         if self._check_panic_keywords(getattr(last_msg, 'text', '')):
-                            self._handoff_to_human(thread.id, username)
+                            self._handoff_to_human(thread.id, username, account_settings)
                             continue
 
                         self._ui_log(f"📨 Procesando hilo {thread.id} de @{username}...")
@@ -688,7 +705,9 @@ class InstagramService:
                                 inventory_path=account_settings.get('inventory_path'),
                                 bot_name=bot_name,
                                 whatsapp_contacto=whatsapp_contacto,
-                                time_context=time_context
+                                time_context=time_context,
+                                location=account_settings.get('location') or account_settings.get('ubicacion', ''),
+                                website=account_settings.get('website', ''),
                             )
                         except RuntimeError as e:
                             self._ui_log(f"🚫 No se puede generar respuesta para hilo {thread.id}: {e}")
@@ -703,6 +722,24 @@ class InstagramService:
                             continue
 
                         self._ui_log(f"💬 Respuesta generada para hilo {thread.id}.")
+
+                        is_handoff = False
+                        try:
+                            normalized = respuesta.lower() if isinstance(respuesta, str) else ''
+                            whatsapp_check = whatsapp_contacto.lower() if whatsapp_contacto else ''
+                            if whatsapp_check and whatsapp_check in normalized:
+                                is_handoff = True
+                            elif 'whatsapp' in normalized:
+                                is_handoff = True
+                            elif 'escríbenos' in normalized or 'nota al encargado' in normalized or 'te voy ayudando' in normalized:
+                                is_handoff = True
+                        except Exception:
+                            is_handoff = False
+
+                        if is_handoff and self.handoff_callback:
+                            self._ui_log("🕒 Handoff detectado. Reteniendo respuesta y esperando tiempo de cortesía.")
+                            self.handoff_callback(thread.id, username, respuesta)
+                            continue
 
                         if "consultar con mi supervisor" in respuesta.lower():
                             self._ui_log("🚨 Botón de pánico activado: notificando al dueño del negocio.")
@@ -778,24 +815,37 @@ class InstagramService:
                     conn.commit()
                     return False
                 except Exception:
-                    return row['status'] in ('PAUSED', 'MANUAL')
-            return row['status'] in ('PAUSED', 'MANUAL')
+                    return row['status'] in ('PAUSED', 'MANUAL', 'WAITING_HUMAN')
+            return row['status'] in ('PAUSED', 'MANUAL', 'WAITING_HUMAN')
 
     def _check_panic_keywords(self, text):
         if not text: return False
         return any(k in text.lower() for k in ["humano", "persona", "asesor", "ayuda", "atencion"])
 
-    def _handoff_to_human(self, tid, user):
+    def _handoff_to_human(self, tid, user, account_settings=None):
         ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         with db.get_connection() as conn:
             conn.execute(
-                "INSERT INTO chat_status (thread_id, status, last_manual_at) VALUES (?, 'PAUSED', ?) "
-                "ON CONFLICT(thread_id) DO UPDATE SET status='PAUSED', last_manual_at=?", 
+                "INSERT INTO chat_status (thread_id, status, last_manual_at) VALUES (?, 'WAITING_HUMAN', ?) "
+                "ON CONFLICT(thread_id) DO UPDATE SET status='WAITING_HUMAN', last_manual_at=?", 
                 (tid, ahora, ahora)
             )
             conn.commit()
-        self.cl.direct_send("He pausado mis respuestas automáticas. Un asesor humano te atenderá.", thread_ids=[tid])
-        self._ui_log(f"⚠️ MODO MANUAL: @{user} derivado a humano.")
+
+        whatsapp_contacto = ''
+        if account_settings:
+            whatsapp_contacto = account_settings.get('whatsapp_number') or account_settings.get('whatsapp_contacto') or ''
+
+        handoff_message = HANDOFF_PHRASE.replace('{whatsapp_contacto}', whatsapp_contacto)
+        if self.handoff_callback:
+            self.handoff_callback(tid, user, handoff_message)
+        else:
+            try:
+                self.cl.direct_send(handoff_message, thread_ids=[tid])
+            except Exception:
+                pass
+
+        self._ui_log(f"⚠️ MODO DE ESPERA: @{user} marcado como WAITING_HUMAN.")
 
     def _notify_owner_alert(self, tid, user, respuesta):
         mensaje = (

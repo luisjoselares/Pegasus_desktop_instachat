@@ -1,6 +1,7 @@
 import csv
 import importlib
 import os
+import random
 import qtawesome as qta
 from PyQt6.QtWidgets import (
     QDialog,
@@ -16,9 +17,12 @@ from PyQt6.QtWidgets import (
     QWidget,
     QFileDialog,
     QGraphicsOpacityEffect,
+    QFrame,
+    QInputDialog,
 )
 from PyQt6.QtGui import QTransform
 from PyQt6.QtCore import Qt, QTime, QThread, pyqtSignal, QTimer, QPropertyAnimation
+from core.ai_engine import AIService
 from services.instagram_service import InstagramService
 
 
@@ -87,7 +91,9 @@ class AddAccountDialog(QDialog):
         self.inventory_type = ""
         self.inventory_headers = []
         self.inventory_rows = 0
-
+        self.hidden_prompt = ""
+        self.digested_context_data = {}
+        self.ai_service = AIService()
         self.setStyleSheet("""
             QDialog, QWidget {
                 background-color: #080808;
@@ -171,7 +177,21 @@ class AddAccountDialog(QDialog):
                 border-color: #00E5FF;
                 color: #FFFFFF;
                 background-color: rgba(0, 229, 255, 0.1);
-            }        """)
+            }
+            QPushButton#AspectCard {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid #333333;
+                border-radius: 16px;
+                color: #FFFFFF;
+                padding: 10px 14px;
+                text-align: left;
+                font-size: 13px;
+            }
+            QPushButton#AspectCard:hover {
+                border-color: #00E5FF;
+                background-color: rgba(0, 229, 255, 0.08);
+            }
+        """)
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(30, 30, 30, 30)
@@ -183,6 +203,7 @@ class AddAccountDialog(QDialog):
         self.page3 = QWidget()
         self.page4 = QWidget()
         self.page5 = QWidget()
+        self.page6 = QWidget()
 
         self.schedule_warning = QLabel("")
 
@@ -191,12 +212,14 @@ class AddAccountDialog(QDialog):
         self._build_page3()
         self._build_page4()
         self._build_page5()
+        self._build_page6()
 
         self.stacked.addWidget(self.page1)
         self.stacked.addWidget(self.page2)
         self.stacked.addWidget(self.page3)
         self.stacked.addWidget(self.page4)
         self.stacked.addWidget(self.page5)
+        self.stacked.addWidget(self.page6)
         self.stacked.currentChanged.connect(self.on_page_changed)
 
         self.fade_effect = QGraphicsOpacityEffect(self.stacked)
@@ -445,13 +468,90 @@ class AddAccountDialog(QDialog):
         self.catalog_status.setStyleSheet("color: #00E5FF;")
         layout.addWidget(self.catalog_status)
 
-        layout.addWidget(QLabel("PREVISTA DE RESPUESTAS"))
-        self.context_input = QTextEdit()
-        self.context_input.setObjectName("PromptArea")
-        self.context_input.setReadOnly(True)
-        self.context_input.setMinimumHeight(160)
-        layout.addWidget(self.context_input)
+        layout.addWidget(QLabel("Tipo de Negocio"))
+        self.business_type_combo = QComboBox()
+        self.business_type_combo.addItems(["Retail", "Profesional", "Booking", "Marca Personal", "Corporativo"])
+        self.business_type_combo.setCurrentText("Retail")
+        self.business_type_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        layout.addWidget(self.business_type_combo)
+
+        layout.addWidget(QLabel("Contexto Masticado"))
+        self.aspect_frame = QFrame()
+        self.aspect_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.aspect_frame.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); border: 1px solid #222222; border-radius: 14px;")
+        self.aspect_layout = QVBoxLayout(self.aspect_frame)
+        self.aspect_layout.setContentsMargins(12, 12, 12, 12)
+        self.aspect_layout.setSpacing(10)
+        layout.addWidget(self.aspect_frame)
+
+        self.btn_edit_details = QPushButton("Editar Detalles")
+        self.btn_edit_details.setObjectName("FlatBtn")
+        self.btn_edit_details.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_edit_details.clicked.connect(self._edit_details)
+        layout.addWidget(self.btn_edit_details)
+
+        layout.addWidget(QLabel("Instrucciones de Personalidad"))
+        self.custom_training_input = QTextEdit()
+        self.custom_training_input.setPlaceholderText("Añade aquí instrucciones de estilo, tono o personalidad...")
+        self.custom_training_input.setMinimumHeight(120)
+        layout.addWidget(self.custom_training_input)
+
+        chips_row = QHBoxLayout()
+        chips_row.setSpacing(8)
+        for chip_text in ["Hablar de 'tú'", "Muy formal", "Usar emojis", "Enfoque en ofertas"]:
+            btn = QPushButton(chip_text)
+            btn.setObjectName("FlatBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, text=chip_text: self._apply_chip(text))
+            chips_row.addWidget(btn)
+        layout.addLayout(chips_row)
+
+        self.context_note = QLabel("Pegasus ya ha configurado los protocolos de seguridad y geolocalización de forma automática.")
+        self.context_note.setStyleSheet("color: #777777; font-size: 12px;")
+        self.context_note.setWordWrap(True)
+        layout.addWidget(self.context_note)
+
         layout.addStretch()
+
+    def display_digested_context(self, data):
+        self.digested_context_data = data or {}
+        for i in reversed(range(self.aspect_layout.count())):
+            widget = self.aspect_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+
+        cards = {
+            "Categoría": data.get('category', 'Sin datos'),
+            "Nicho": data.get('niche', 'Sin datos'),
+            "Productos/Servicios": data.get('products_services', 'Sin datos'),
+            "Tono": data.get('tone', 'Sin datos'),
+            "Ubicación": data.get('location', 'Sin datos'),
+        }
+
+        for key, value in cards.items():
+            card = QPushButton(f"{key}: {value}")
+            card.setObjectName("AspectCard")
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.clicked.connect(lambda checked, k=key: self._edit_aspect(k))
+            self.aspect_layout.addWidget(card)
+            self.digested_context_data[key] = value
+
+    def _edit_aspect(self, key):
+        current = self.digested_context_data.get(key, '')
+        text, ok = QInputDialog.getText(self, f"Editar {key}", f"Nuevo valor para {key}:", text=current)
+        if ok and text:
+            self.digested_context_data[key] = text
+            self.display_digested_context(self.digested_context_data)
+
+    def _edit_details(self):
+        for key in ["Categoría", "Nicho", "Productos/Servicios", "Tono", "Ubicación"]:
+            self._edit_aspect(key)
+
+    def _apply_chip(self, text):
+        current = self.custom_training_input.toPlainText().strip()
+        if current:
+            current += "\n"
+        self.custom_training_input.setPlainText(current + text)
 
     def _build_page5(self):
         layout = QVBoxLayout(self.page5)
@@ -483,6 +583,22 @@ class AddAccountDialog(QDialog):
         self.txt_ubicacion.setPlaceholderText("Ej: Local 4, Centro Comercial X. (O 'Solo tienda virtual')")
         layout.addWidget(self.txt_ubicacion)
 
+        self.txt_website_label = QLabel("¿Tienes sitio web o catálogo online?")
+        self.txt_website_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_website_label)
+
+        self.txt_website = QLineEdit()
+        self.txt_website.setPlaceholderText("Ej: https://miempresa.com")
+        layout.addWidget(self.txt_website)
+
+        self.txt_tasa_cambio_label = QLabel("¿Cuál es tu tasa de cambio preferida?")
+        self.txt_tasa_cambio_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_tasa_cambio_label)
+
+        self.txt_tasa_cambio = QLineEdit()
+        self.txt_tasa_cambio.setPlaceholderText("Ej: 1 USD = 3.600.000 Bs")
+        layout.addWidget(self.txt_tasa_cambio)
+
         self.txt_envios_label = QLabel("¿Cómo manejas los envíos o el delivery?")
         self.txt_envios_label.setProperty("class", "QuestionLabel")
         layout.addWidget(self.txt_envios_label)
@@ -511,15 +627,15 @@ class AddAccountDialog(QDialog):
 
         layout.addLayout(payment_row)
 
-        self.page5_status = QLabel("Define las reglas operativas antes de activar el bot.")
+        self.page5_status = QLabel("Define las reglas operativas antes de continuar al resumen final.")
         self.page5_status.setStyleSheet("color: #a5b1c2; margin-top: 8px;")
         layout.addWidget(self.page5_status)
 
-        self.btn_finalizar = QPushButton("Finalizar y Activar Bot")
+        self.btn_finalizar = QPushButton("Ver resumen final")
         self.btn_finalizar.setObjectName("PrimaryBtn")
         self.btn_finalizar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_finalizar.setMaximumWidth(240)
-        self.btn_finalizar.clicked.connect(self.finish_and_save)
+        self.btn_finalizar.clicked.connect(self.goto_summary)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -527,6 +643,158 @@ class AddAccountDialog(QDialog):
         layout.addLayout(btn_row)
 
         layout.addStretch()
+
+    def _build_page6(self):
+        layout = QVBoxLayout(self.page6)
+        layout.setSpacing(12)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        title = QLabel("Resumen y Prueba de Agente")
+        title.setObjectName("StepTitle")
+        layout.addWidget(title)
+
+        subtitle = QLabel("Revisa la configuración y haz una prueba rápida con el asistente.")
+        subtitle.setObjectName("StepSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        self.summary_display = QTextEdit()
+        self.summary_display.setReadOnly(True)
+        self.summary_display.setMinimumHeight(220)
+        self.summary_display.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); color: #FFFFFF;")
+        layout.addWidget(self.summary_display)
+
+        self.summary_note = QLabel(
+            "La configuración interna del asistente se genera y guarda de forma segura. "
+            "Aquí ves solo lo esencial para revisar antes de activar."
+        )
+        self.summary_note.setWordWrap(True)
+        self.summary_note.setStyleSheet("color: #777777; font-size: 12px;")
+        layout.addWidget(self.summary_note)
+
+        input_row = QHBoxLayout()
+        self.preview_input = QLineEdit()
+        self.preview_input.setPlaceholderText("Escribe una pregunta para probar al agente...")
+        input_row.addWidget(self.preview_input)
+
+        self.btn_preview = QPushButton("Probar agente")
+        self.btn_preview.setObjectName("PrimaryBtn")
+        self.btn_preview.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_preview.clicked.connect(self.test_agent_response)
+        input_row.addWidget(self.btn_preview)
+        layout.addLayout(input_row)
+
+        self.btn_random_prompt = QPushButton("Usar pregunta aleatoria")
+        self.btn_random_prompt.setObjectName("FlatBtn")
+        self.btn_random_prompt.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_random_prompt.clicked.connect(self.use_random_preview_prompt)
+        layout.addWidget(self.btn_random_prompt)
+
+        self.preview_output = QTextEdit()
+        self.preview_output.setReadOnly(True)
+        self.preview_output.setMinimumHeight(160)
+        self.preview_output.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); color: #FFFFFF;")
+        layout.addWidget(self.preview_output)
+
+        self.page6_status = QLabel("Revisa todo antes de guardar y prueba el estilo de respuesta.")
+        self.page6_status.setStyleSheet("color: #a5b1c2; margin-top: 8px;")
+        layout.addWidget(self.page6_status)
+
+        self.btn_finalize_save = QPushButton("Finalizar y activar bot")
+        self.btn_finalize_save.setObjectName("PrimaryBtn")
+        self.btn_finalize_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_finalize_save.setMaximumWidth(240)
+        self.btn_finalize_save.clicked.connect(self.finish_and_save)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(self.btn_finalize_save)
+        layout.addLayout(btn_row)
+
+        layout.addStretch()
+
+    def goto_summary(self):
+        self.update_role_logic()
+        if self.end_time.time() <= self.start_time.time():
+            self.schedule_warning.setText("El horario de cierre debe ser posterior al de apertura")
+            return
+        self.stacked.setCurrentIndex(self.stacked.count() - 1)
+
+    def load_summary_page(self):
+        self.update_role_logic()
+        self.summary_display.setPlainText(self.get_summary_text())
+        if not self.preview_input.text().strip():
+            self.preview_input.setPlaceholderText("Escribe o usa una pregunta aleatoria para probar al agente...")
+        self.preview_output.setPlainText("")
+        self.page6_status.setText("Revisa todo antes de guardar y prueba el estilo de respuesta.")
+
+    def get_summary_text(self):
+        payments = [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else []
+        custom = self.custom_training_input.toPlainText().strip() if hasattr(self, 'custom_training_input') else ""
+        inventory = "Sí" if self.inventory_connected else "No"
+        inventory_info = f"{self.inventory_rows} productos" if self.inventory_connected else "sin inventario"
+        assistant = self.assistant_name_input.text().strip() or "No asignado"
+        store = self.store_input.text().strip() or "No asignado"
+        summary_lines = [
+            f"Negocio: {store}",
+            f"Asistente: {assistant}",
+            f"Tipo de negocio: {self.business_type_combo.currentText() if hasattr(self, 'business_type_combo') else 'No definido'}",
+            f"Personalidad elegida: {self.personality_selected}",
+            f"Horario de atención: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}",
+            f"Inventario conectado: {inventory} ({inventory_info})",
+            f"Ubicación: {self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else 'No definido'}",
+            f"Sitio web: {self.txt_website.text().strip() if hasattr(self, 'txt_website') else 'No definido'}",
+            f"Tasa de cambio: {self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else 'No definida'}",
+            f"WhatsApp de contacto: {self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else 'No definido'}",
+            f"Métodos de pago: {', '.join(payments) if payments else 'No definidos'}",
+            "",
+            "Instrucciones personalizadas del asistente:",
+            custom or "- Sin instrucciones adicionales -",
+            "",
+            "La configuración interna del asistente se guarda en segundo plano y no se muestra directamente aquí.",
+        ]
+        return "\n".join(summary_lines)
+
+    def use_random_preview_prompt(self):
+        examples = [
+            "¿Tienen algún descuento disponible para este producto?",
+            "¿Cuánto cuesta el envío al centro de la ciudad?",
+            "Estoy interesado en saber si este artículo está disponible ahora mismo.",
+            "¿Pueden enviar a otro estado?",
+            "¿Qué medios de pago aceptan y cómo hago el pedido?",
+        ]
+        self.preview_input.setText(random.choice(examples))
+
+    def test_agent_response(self):
+        self.update_role_logic()
+        question = self.preview_input.text().strip()
+        if not question:
+            self.page6_status.setText("Escribe una pregunta para probar al agente.")
+            return
+        self.page6_status.setText("Generando respuesta...")
+        self.preview_output.setPlainText("Generando respuesta...")
+        try:
+            answer = self.ai_service.generate_response(
+                user_input=question,
+                system_prompt=self.hidden_prompt,
+                bot_role=self.personality_selected,
+                business_profile=f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
+                inventory_path=self.csv_path,
+                bot_name=self.assistant_name_input.text().strip(),
+                whatsapp_contacto=self.txt_whatsapp.text().strip(),
+                location=self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
+                website=self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
+                time_context="CONTINUOUS",
+                custom_training=self.custom_training_input.toPlainText().strip(),
+            )
+            if answer is None:
+                self.preview_output.setPlainText("No se pudo generar respuesta. Verifica la conexión de IA o la llave activa.")
+            else:
+                self.preview_output.setPlainText(answer)
+                self.page6_status.setText("Prueba completada. Revisa la respuesta y guarda.")
+        except Exception as e:
+            self.preview_output.setPlainText(f"Error al generar la respuesta: {e}")
+            self.page6_status.setText("No se pudo generar la prueba de agente.")
 
     def on_page_changed(self, index):
         self.footer.setVisible(index != 0)
@@ -549,7 +817,9 @@ class AddAccountDialog(QDialog):
         elif index == 3:
             self.update_role_logic()
         elif index == 4:
-            self.page5_status.setText("Define las reglas operativas antes de activar el bot.")
+            self.page5_status.setText("Define las reglas operativas antes de continuar al resumen final.")
+        elif index == self.stacked.count() - 1:
+            self.load_summary_page()
 
         self.animate_fade()
 
@@ -563,7 +833,7 @@ class AddAccountDialog(QDialog):
         self.select_personality_card(self.personality_selected)
         self.start_time.setTime(QTime.fromString(account_data.get('schedule_start', '08:00'), 'HH:mm'))
         self.end_time.setTime(QTime.fromString(account_data.get('schedule_end', '18:00'), 'HH:mm'))
-        self.context_input.setPlainText(account_data.get('system_prompt', ''))
+        self.hidden_prompt = account_data.get('system_prompt', '')
         self.csv_path = os.path.abspath(account_data.get('inventory_path', '')) if account_data.get('inventory_path') else ''
         self.inventory_connected = bool(self.csv_path)
         if self.inventory_connected:
@@ -573,13 +843,33 @@ class AddAccountDialog(QDialog):
         if hasattr(self, 'txt_whatsapp'):
             self.txt_whatsapp.setText(account_data.get('whatsapp_number', ''))
         if hasattr(self, 'txt_ubicacion'):
-            self.txt_ubicacion.setText(account_data.get('ubicacion', ''))
+            self.txt_ubicacion.setText(account_data.get('location', account_data.get('ubicacion', '')))
+        if hasattr(self, 'txt_website'):
+            self.txt_website.setText(account_data.get('website', ''))
+        if hasattr(self, 'txt_tasa_cambio'):
+            self.txt_tasa_cambio.setText(account_data.get('exchange_rate', ''))
         if hasattr(self, 'txt_envios'):
             self.txt_envios.setText(account_data.get('envios', ''))
         if hasattr(self, 'payment_buttons'):
             selected_payments = set(account_data.get('payment_methods', []))
             for btn in self.payment_buttons:
                 btn.setChecked(btn.text() in selected_payments)
+        if hasattr(self, 'business_type_combo'):
+            business_type = account_data.get('type') or account_data.get('context_type')
+            if business_type and self.business_type_combo.findText(business_type) >= 0:
+                self.business_type_combo.setCurrentText(business_type)
+            elif business_type:
+                normalized = business_type.strip().lower()
+                if 'retail' in normalized or 'vendedor' in normalized:
+                    self.business_type_combo.setCurrentText('Retail')
+                elif 'profesional' in normalized or 'soporte' in normalized:
+                    self.business_type_combo.setCurrentText('Profesional')
+                elif 'booking' in normalized or 'cita' in normalized:
+                    self.business_type_combo.setCurrentText('Booking')
+                elif 'marca' in normalized or 'personal' in normalized:
+                    self.business_type_combo.setCurrentText('Marca Personal')
+                else:
+                    self.business_type_combo.setCurrentText('Corporativo')
         self.page1_status.setText("Edita los campos y guarda los cambios.")
         self.page2_status.setText("Revisa la identidad de la cuenta antes de guardar.")
         self.page3_status.setText("Ajusta la personalidad o continúa al horario.")
@@ -827,8 +1117,7 @@ class AddAccountDialog(QDialog):
         elif persona.startswith("Soporte Profesional"):
             prompt += " Responde con seriedad, precisión y profesionalismo, enfocándote en la solución del cliente."
 
-        if hasattr(self, 'context_input') and self.context_input is not None:
-            self.context_input.setPlainText(prompt)
+        self.hidden_prompt = prompt
 
     def select_personality_card(self, name):
         self.personality_selected = name
@@ -877,14 +1166,17 @@ class AddAccountDialog(QDialog):
                 "summary": inventory_summary,
             },
             "inventory_rows": self.inventory_rows,
-            "type": personality,
+            "type": self.business_type_combo.currentText() if hasattr(self, 'business_type_combo') else personality,
             "start": self.start_time.time().toString("HH:mm") if hasattr(self, 'start_time') else "08:00",
             "end": self.end_time.time().toString("HH:mm") if hasattr(self, 'end_time') else "18:00",
             "proxy": "Auto",
-            "prompt": self.context_input.toPlainText().strip() if hasattr(self, 'context_input') else "",
+            "prompt": self.custom_training_input.toPlainText().strip() if hasattr(self, 'custom_training_input') else "",
             "security_level": "High",
-            "system_prompt_final": self.context_input.toPlainText().strip() if hasattr(self, 'context_input') else "",
+            "system_prompt_final": self.hidden_prompt,
             "whatsapp_number": self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else "",
+            "location": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
+            "website": self.txt_website.text().strip() if hasattr(self, 'txt_website') else "",
+            "exchange_rate": self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else "",
             "ubicacion": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
             "envios": self.txt_envios.text().strip() if hasattr(self, 'txt_envios') else "",
             "payment_methods": [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],

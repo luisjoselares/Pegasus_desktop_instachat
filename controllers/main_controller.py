@@ -7,7 +7,7 @@ from services.instagram_service import InstagramService
 
 class BotThread(QThread):
     status_signal = pyqtSignal(str)
-    handoff_signal = pyqtSignal(str, str)
+    handoff_signal = pyqtSignal(str, str, str)
     rescue_signal = pyqtSignal(str, str)
     session_signal = pyqtSignal(object)
 
@@ -20,7 +20,7 @@ class BotThread(QThread):
 
     def run(self):
         self.engine.set_callback(lambda msg: self.status_signal.emit(msg))
-        self.engine.set_handoff_callback(lambda tid, username: self.handoff_signal.emit(tid, username))
+        self.engine.set_handoff_callback(lambda tid, username, handoff_msg: self.handoff_signal.emit(tid, username, handoff_msg))
         self.engine.set_rescue_callback(lambda tid, username: self.rescue_signal.emit(tid, username))
         self.engine.set_session_ready_callback(lambda session_data: self.session_signal.emit(session_data))
         try:
@@ -37,6 +37,7 @@ class MainController:
         self.cliente_id = cliente_id
         self.security_service = security_service
         self.db_service = db_service
+        self.insta_controller = None
 
         if licencia_data and hasattr(self.engine, 'set_licencia_id'):
             self.engine.set_licencia_id(licencia_data.get('id'))
@@ -52,6 +53,9 @@ class MainController:
         if hasattr(self.view, 'btn_start') and hasattr(self.view, 'btn_stop'):
             self.view.btn_start.clicked.connect(self.iniciar_bot)
             self.view.btn_stop.clicked.connect(self.detener_bot)
+
+    def set_instagram_controller(self, insta_controller):
+        self.insta_controller = insta_controller
 
     def cargar_datos_usuario(self, cliente, licencia):
         """Inyecta los datos de Supabase en la vista y calcula vencimiento."""
@@ -137,11 +141,13 @@ class MainController:
         self.thread.finished.connect(self._on_thread_finished)
         self.thread.start()
 
-    def handle_handoff_signal(self, thread_id, username):
+    def handle_handoff_signal(self, thread_id, username, handoff_message):
         if hasattr(self.view, 'log_console'):
-            self.view.log_console.append(f"[HANDOFF] Intervención humana detectada en @{username}. Bot silenciado 12h.")
+            self.view.log_console.append(f"[HANDOFF] Intervención detectada en @{username}. Esperando 3 min antes de redirigir.")
         if hasattr(self.view, 'mark_handoff_thread'):
             self.view.mark_handoff_thread(thread_id)
+        if self.insta_controller:
+            self.insta_controller.schedule_handoff(thread_id, username, handoff_message, whatsapp_contacto="")
 
     def handle_rescue_signal(self, thread_id, username):
         if hasattr(self.view, 'log_console'):

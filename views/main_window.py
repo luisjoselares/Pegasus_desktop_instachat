@@ -72,6 +72,8 @@ class MainWindow(QMainWindow):
             db_service=self.db_service
         )
         self.insta_controller.set_main_controller(self.main_controller)
+        self.main_controller.set_instagram_controller(self.insta_controller)
+        self.insta_controller.handoff_alert.connect(self.show_handoff_alert)
 
         self.accounts_page = InstagramAccountsPage(self.insta_controller, main_window=self)
         self.insta_controller.set_view(self.accounts_page, self.current_cliente_id)
@@ -114,6 +116,11 @@ class MainWindow(QMainWindow):
         self.tx_info.setWordWrap(True)
         self.tx_info.setStyleSheet("color: #AAAAAA; font-size: 12px; margin-bottom: 20px;")
         layout.addWidget(self.tx_info)
+
+    def show_handoff_alert(self, thread_id, username):
+        if hasattr(self, 'log_dialog') and self.log_dialog:
+            self.log_dialog.log_console.append(f"[ALERTA VISUAL] Handoff detectado para @{username}. Se activará redirección en 3 min.")
+        QMessageBox.information(self, "Handoff detectado", f"Handoff detectado en @{username}. El mensaje esperará 3 minutos antes de la redirección.")
 
     def setup_sidebar(self):
         self.sidebar = QFrame()

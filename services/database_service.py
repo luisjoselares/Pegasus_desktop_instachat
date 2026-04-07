@@ -43,6 +43,9 @@ class LocalDBService:
                     operating_hours TEXT DEFAULT '',
                     inventory_path TEXT DEFAULT '',
                     structured_identity TEXT DEFAULT '',
+                    location TEXT DEFAULT '',
+                    website TEXT DEFAULT '',
+                    exchange_rate TEXT DEFAULT '',
                     proxy TEXT DEFAULT 'Auto',
                     schedule_start TEXT DEFAULT '08:00',
                     schedule_end TEXT DEFAULT '18:00',
@@ -94,6 +97,9 @@ class LocalDBService:
                 "operating_hours": "TEXT DEFAULT ''",
                 "inventory_path": "TEXT DEFAULT ''",
                 "structured_identity": "TEXT DEFAULT ''",
+                "location": "TEXT DEFAULT ''",
+                "website": "TEXT DEFAULT ''",
+                "exchange_rate": "TEXT DEFAULT ''",
                 "proxy": "TEXT DEFAULT 'Auto'",
                 "schedule_start": "TEXT DEFAULT '08:00'",
                 "schedule_end": "TEXT DEFAULT '18:00'",
@@ -273,6 +279,7 @@ class LocalDBService:
             columns = [
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
                 'bot_role', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
+                'location', 'website', 'exchange_rate',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
             ]
             inventory_path = data.get('inventory_path', '') or ''
@@ -283,6 +290,7 @@ class LocalDBService:
                 data['user'], data['pass'], data.get('store_name', ''), data.get('description', ''),
                 data['prompt'], data.get('bot_role', ''), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
+                data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
                 data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
             ]
             if cliente_id is not None:
@@ -314,6 +322,7 @@ class LocalDBService:
             'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
             'description', 'bot_role', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
+            'location', 'website', 'exchange_rate',
             'context_type', 'schedule_start', 'schedule_end',
             'proxy', 'session_data', 'last_log'
         }
@@ -351,6 +360,9 @@ class LocalDBService:
             account.setdefault('operating_hours', '')
             account.setdefault('inventory_path', '')
             account.setdefault('structured_identity', '')
+            account.setdefault('location', '')
+            account.setdefault('website', '')
+            account.setdefault('exchange_rate', '')
             return account
 
         cuentas = self.obtener_cuentas(cliente_id)
@@ -361,6 +373,9 @@ class LocalDBService:
             cuenta.setdefault('operating_hours', '')
             cuenta.setdefault('inventory_path', '')
             cuenta.setdefault('structured_identity', '')
+            cuenta.setdefault('location', '')
+            cuenta.setdefault('website', '')
+            cuenta.setdefault('exchange_rate', '')
         return cuentas
 
     def save_settings(self, account_id, changes, cliente_id=None):
