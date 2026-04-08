@@ -11,14 +11,15 @@ load_dotenv()
 
 GOLDEN_RULES = (
     "Eres Pegasus, un miembro integrado del equipo de {business_profile_name}. "
-    "Tu nombre es {bot_name} y eres parte del equipo de {business_profile_name}. Identidad: Eres un humano del equipo de trabajo (nombre: {bot_name}). "
+    "Tu nombre es {bot_name}. Si debes presentarte, di 'Soy {bot_name} del equipo de {business_profile_name}' o 'Soy {bot_name}, un gusto...'. "
     "NO hables como 'el asistente de...'. Si es Marca Personal, habla como el dueño o su manager directo: 'Hacemos lives...', 'Mis rutinas...'. Si es Tienda, habla como el equipo: 'Estamos en...', 'Nuestros precios...'. NUNCA uses frases como 'Soy el asistente de...' ni 'esta marca se enfoca en...'. Sé la marca. "
-    "Si te preguntan si eres un robot, bot o IA, responde estrictamente con: '¡Para nada! Soy {bot_name} del equipo de atención. ¿En qué puedo apoyarte?'. NUNCA uses 'no tengo esa información a mano' para preguntas personales. "
+    "Si te preguntan si eres un robot, bot o IA, responde con carisma: '¡Para nada! Soy {bot_name}. ¿Cómo puedo ayudarte?'. NUNCA uses 'no tengo esa información a mano' para preguntas personales. "
+    "Usa siempre primera persona cuando hables de la marca: 'Soy', 'Somos' o 'Nuestro equipo' según convenga. "
     "PROHIBICIÓN: Tienes estrictamente prohibido usar expresiones de risa escrita como 'jaja', 'jeje', 'jajaja' en cualquiera de tus respuestas, sin importar el contexto. "
     "Tu contexto geográfico es Venezuela. Monedas: Dólares (USD) y Bolívares (Bs). No inventes precios. Identidad: Humana (nombre: {bot_name}). "
     "Si las variables location o website están vacías, responde: 'No tenemos sede física, atendemos 100% online'. Si están llenas, dales con precisión y sin rodeos. "
     "Cuando el cliente pregunte por precio o moneda, usa la variable exchange_rate y responde directo: 'El precio es {precio} $ o su equivalente en Bs a la tasa de {exchange_rate} del día'. "
-    "Si no tienes una información técnica o de inventario clara, debes responder: 'Dame un momento, estoy confirmando ese dato exacto con el encargado/almacén...' y activar la alerta de handoff. No envíes el link de WhatsApp de inmediato a menos que pasen 3 minutos sin respuesta humana. "
+    "Si no tienes una información técnica o de inventario clara, responde: 'Dame un momento, estoy validando esa información con el encargado/almacén...' y activa la alerta de handoff. NO envíes el link de WhatsApp de inmediato. "
     "Adapta tu lenguaje al tipo de cuenta. Si es una Persona/Influencer, habla en nombre de esa persona. Si es una Clínica o un servicio profesional, habla como parte del equipo médico o del equipo responsable. NUNCA menciones 'compras' o 'tienda' si el perfil es de servicios o marca personal. "
     "CAPACIDAD INFORMATIVA: Si el cliente pregunta por el negocio, ubicación, horarios, especialidad o información que está en la ficha del negocio o en la publicación descrita en business_profile, responde con ese dato exacto de forma amable. Solo sugiere WhatsApp si la información no está disponible o si la consulta requiere gestión humana, como agendar una cita. "
     "Usa términos comerciales precisos de Venezuela. NUNCA digas 'noticia de venta', di 'factura', 'comprobante' o 'nota de entrega'. NUNCA digas 'encargado digital', di simplemente 'el encargado' o 'el equipo'. "
@@ -38,11 +39,11 @@ INDUSTRY_CONTEXTS = {
 }
 
 HANDOFF_PHRASE = (
-    "Dame un momento, estoy confirmando ese dato exacto con el encargado/almacén. Activa la alerta de handoff y no envíes el link de WhatsApp de inmediato a menos que pasen 3 minutos sin respuesta humana."
+    "Dame un momento, estoy validando esa información con el encargado/almacén... No envíes el link de WhatsApp de inmediato."
 )
 
 PRICE_HANDOFF_PHRASE = (
-    "Dame un momento, estoy confirmando ese dato exacto con el encargado/almacén. No envíes el link de WhatsApp de inmediato a menos que pasen 3 minutos sin respuesta humana."
+    "Dame un momento, estoy validando esa información con el encargado/almacén... No envíes el link de WhatsApp de inmediato."
 )
 
 CLOSING_PHRASE = (
@@ -338,6 +339,145 @@ class AIService:
             inventory_text = "\n".join(short_lines)
             inventory_text += "\n\n[Resumen: Catálogo reducido para mantener el prompt dentro de los límites de tokens.]"
         return inventory_text
+
+    def _load_inventory_rows(self, inventory_path):
+        try:
+            if not inventory_path:
+                return []
+            lower = inventory_path.lower()
+            if lower.endswith('.csv'):
+                _, rows = self._read_csv_inventory(inventory_path)
+                return rows
+            if lower.endswith(('.xlsx', '.xls')):
+                _, rows = self._read_excel_inventory(inventory_path)
+                return rows
+        except Exception:
+            return []
+        return []
+
+    def _clean_query(self, query):
+        if not query:
+            return ""
+        text = str(query).strip()
+        text = re.sub(
+            r"^(hola|buenos d[ií]as|buenas tardes|buenas noches|buen d[ií]a|buenas|hey|hol[ae]|qué tal|que tal|saludos)\b[:,]?\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+        return text.strip()
+
+    def _retrieve_relevant_inventory(self, user_query, inventory_rows):
+        if not user_query or not inventory_rows:
+            return []
+        keywords = [word for word in re.findall(r"\w{4,}", user_query.lower()) if word not in {'tiene', 'tienen', 'precio', 'cuesta', 'donde', 'dónde', 'cuando', 'qué', 'como', 'cómo', 'para'}]
+        if not keywords:
+            return []
+        relevant = []
+        for row in inventory_rows:
+            row_text = " ".join(str(cell).strip() for cell in row if cell is not None)
+            normalized = row_text.lower()
+            if any(keyword in normalized for keyword in keywords):
+                relevant.append(row_text)
+        return relevant[:10]
+
+    def _retrive_context(self, query, inventory_rows, settings):
+        query_text = self._clean_query(query)
+        relevant_items = self._retrieve_relevant_inventory(query_text, inventory_rows)
+        context_parts = []
+        if relevant_items:
+            top_items = relevant_items[:3]
+            context_parts.append("Contexto RAG relevante:")
+            for item in top_items:
+                context_parts.append(f"- {item}")
+        if settings:
+            if settings.get('location'):
+                context_parts.append(f"Ubicación configurada: {settings.get('location')}.")
+            if settings.get('exchange_rate'):
+                context_parts.append(f"Tasa de cambio: {settings.get('exchange_rate')}.")
+            if settings.get('website'):
+                context_parts.append(f"Sitio web o catálogo online: {settings.get('website')}.")
+        return "\n".join(context_parts).strip()
+
+    def _build_dynamic_system_prompt(self, config=None, base_prompt=None):
+        config = config or {}
+        parts = []
+        country = config.get('country')
+        language = config.get('language')
+        currency_symbol = config.get('currency_symbol')
+        location = config.get('location')
+        website = config.get('website')
+        exchange_rate = config.get('exchange_rate')
+
+        if country:
+            parts.append(f"País de operación: {country}.")
+        if language:
+            parts.append(f"Idioma preferido: {language}. Responde en este idioma.")
+        if currency_symbol:
+            parts.append(f"Símbolo de moneda local: {currency_symbol}.")
+        if location:
+            parts.append(f"Ubicación configurada: {location}.")
+        if website:
+            parts.append(f"Catálogo o sitio web: {website}.")
+        if exchange_rate:
+            parts.append(f"Tasa de cambio definida: {exchange_rate}.")
+
+        if base_prompt:
+            parts.append(base_prompt)
+        return "\n".join(parts)
+
+    def _needs_handoff(self, user_query, config, relevant_inventory):
+        query = str(user_query or '').lower()
+        config = config or {}
+        missing_location = 'ubic' in query or 'dónde' in query or 'donde' in query
+        missing_website = 'web' in query or 'sitio' in query or 'catálogo' in query or 'catalogo' in query
+        missing_price = 'precio' in query or 'cuesta' in query or 'moneda' in query or 'bs' in query or 'usd' in query
+
+        if missing_location and not config.get('location') and not relevant_inventory:
+            return True
+        if missing_website and not config.get('website') and not relevant_inventory:
+            return True
+        if missing_price and not config.get('exchange_rate') and not relevant_inventory:
+            return True
+        return False
+
+    def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None):
+        config = config or {}
+        relevant_inventory = []
+        rag_context = ""
+
+        if inventory_rows is not None:
+            rag_context = self._retrive_context(user_input, inventory_rows, config)
+        elif inventory_path:
+            inventory_rows = self._load_inventory_rows(inventory_path)
+            rag_context = self._retrive_context(user_input, inventory_rows, config)
+
+        if rag_context:
+            inventory = rag_context
+            relevant_inventory = [line for line in rag_context.splitlines() if line.startswith('-')]
+
+        if self._needs_handoff(user_input, config, relevant_inventory):
+            return "Dame un momento para confirmarte...", True
+
+        system_prompt = self._build_dynamic_system_prompt(config, base_prompt=config.get('system_prompt') or config.get('business_profile'))
+        system_prompt += "\nSi el contexto inyectado por el RAG contiene información sobre un producto, usa esos precios y detalles como la única verdad. Si no hay información en el contexto, activa el protocolo de 'Dame un momento para consultar...' (Handoff)."
+
+        response = self.generate_response(
+            user_input=user_input,
+            system_prompt=system_prompt,
+            bot_role=config.get('bot_role'),
+            business_profile=config.get('business_profile'),
+            inventory=inventory,
+            inventory_path=None,
+            bot_name=config.get('bot_name'),
+            whatsapp_contacto=config.get('whatsapp_contacto'),
+            time_context=time_context,
+            custom_training=custom_training,
+            location=config.get('location'),
+            website=config.get('website'),
+            exchange_rate=config.get('exchange_rate'),
+        )
+        return response, False
 
     def _resolve_bot_name(self, bot_name=None):
         resolved = str(bot_name).strip() if bot_name else ""
@@ -646,7 +786,7 @@ class AIService:
         texto = respuesta.strip()
 
         if re.search(r"\b(asistente virtual|inteligencia artificial|IA|bot|robot|soy un bot|soy una IA|no soy humano|no soy una IA)\b", texto, flags=re.IGNORECASE):
-            return f"¡Para nada! Soy {resolved_bot_name} del equipo de atención. ¿En qué puedo apoyarte?"
+            return f"¡Para nada! Soy {resolved_bot_name}. ¿Cómo puedo ayudarte?"
 
         texto = re.sub(
             r"\b(el asistente de atención|el asistente de|el asistente)\b",

@@ -43,6 +43,9 @@ class LocalDBService:
                     operating_hours TEXT DEFAULT '',
                     inventory_path TEXT DEFAULT '',
                     structured_identity TEXT DEFAULT '',
+                    country TEXT DEFAULT 'Venezuela',
+                    language TEXT DEFAULT 'es',
+                    currency_symbol TEXT DEFAULT 'Bs',
                     location TEXT DEFAULT '',
                     website TEXT DEFAULT '',
                     exchange_rate TEXT DEFAULT '',
@@ -97,6 +100,9 @@ class LocalDBService:
                 "operating_hours": "TEXT DEFAULT ''",
                 "inventory_path": "TEXT DEFAULT ''",
                 "structured_identity": "TEXT DEFAULT ''",
+                "country": "TEXT DEFAULT 'Venezuela'",
+                "language": "TEXT DEFAULT 'es'",
+                "currency_symbol": "TEXT DEFAULT 'Bs'",
                 "location": "TEXT DEFAULT ''",
                 "website": "TEXT DEFAULT ''",
                 "exchange_rate": "TEXT DEFAULT ''",
@@ -279,6 +285,7 @@ class LocalDBService:
             columns = [
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
                 'bot_role', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
+                'country', 'language', 'currency_symbol',
                 'location', 'website', 'exchange_rate',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
             ]
@@ -290,6 +297,7 @@ class LocalDBService:
                 data['user'], data['pass'], data.get('store_name', ''), data.get('description', ''),
                 data['prompt'], data.get('bot_role', ''), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
+                data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'),
                 data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
                 data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
             ]
@@ -322,6 +330,7 @@ class LocalDBService:
             'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
             'description', 'bot_role', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
+            'country', 'language', 'currency_symbol',
             'location', 'website', 'exchange_rate',
             'context_type', 'schedule_start', 'schedule_end',
             'proxy', 'session_data', 'last_log'
@@ -360,6 +369,9 @@ class LocalDBService:
             account.setdefault('operating_hours', '')
             account.setdefault('inventory_path', '')
             account.setdefault('structured_identity', '')
+            account.setdefault('country', 'Venezuela')
+            account.setdefault('language', 'es')
+            account.setdefault('currency_symbol', 'Bs')
             account.setdefault('location', '')
             account.setdefault('website', '')
             account.setdefault('exchange_rate', '')
@@ -373,6 +385,9 @@ class LocalDBService:
             cuenta.setdefault('operating_hours', '')
             cuenta.setdefault('inventory_path', '')
             cuenta.setdefault('structured_identity', '')
+            cuenta.setdefault('country', 'Venezuela')
+            cuenta.setdefault('language', 'es')
+            cuenta.setdefault('currency_symbol', 'Bs')
             cuenta.setdefault('location', '')
             cuenta.setdefault('website', '')
             cuenta.setdefault('exchange_rate', '')

@@ -110,6 +110,20 @@ class InstagramController(QObject):
             changes['system_prompt'] = data['prompt']
         if data.get('type') is not None:
             changes['context_type'] = data['type']
+        if data.get('country') is not None:
+            changes['country'] = data['country']
+        if data.get('language') is not None:
+            changes['language'] = data['language']
+        if data.get('currency_symbol') is not None:
+            changes['currency_symbol'] = data['currency_symbol']
+        if data.get('location') is not None:
+            changes['location'] = data['location']
+        if data.get('website') is not None:
+            changes['website'] = data['website']
+        if data.get('exchange_rate') is not None:
+            changes['exchange_rate'] = data['exchange_rate']
+        if data.get('whatsapp_number') is not None:
+            changes['whatsapp_number'] = data['whatsapp_number']
         if data.get('start') is not None:
             changes['schedule_start'] = data['start']
         if data.get('end') is not None:
@@ -177,6 +191,71 @@ class InstagramController(QObject):
             self.db.update_thread_status(thread_id, status='ACTIVE', cliente_id=self.cliente_id)
             print(f"Controlador: Hilo {thread_id} reactivado manualmente.")
 
+    def process_incoming_message(self, thread_id, username, user_text, account_id):
+        if not account_id:
+            return None, False
+
+        settings = self.db.get_settings(account_id, self.cliente_id)
+        if not settings:
+            return None, False
+
+        config = {
+            'country': settings.get('country', 'Venezuela'),
+            'language': settings.get('language', 'es'),
+            'currency_symbol': settings.get('currency_symbol', 'Bs'),
+            'location': settings.get('location', ''),
+            'website': settings.get('website', ''),
+            'exchange_rate': settings.get('exchange_rate', ''),
+            'bot_name': settings.get('assistant_name') or settings.get('bot_name') or settings.get('business_name'),
+            'whatsapp_contacto': settings.get('whatsapp_number') or settings.get('whatsapp_contacto', ''),
+            'bot_role': settings.get('bot_role') or settings.get('context_type'),
+            'business_profile': settings.get('business_data') or settings.get('description') or settings.get('store_name'),
+            'system_prompt': settings.get('system_prompt', ''),
+        }
+
+        inventory_rows = []
+        inventory_path = settings.get('inventory_path')
+        if inventory_path and hasattr(self.engine, 'ai') and hasattr(self.engine.ai, '_load_inventory_rows'):
+            inventory_rows = self.engine.ai._load_inventory_rows(inventory_path)
+
+        response = None
+        needs_handoff = False
+        if hasattr(self.engine, 'ai') and hasattr(self.engine.ai, 'get_response'):
+            try:
+                response, needs_handoff = self.engine.ai.get_response(
+                    user_input=user_text,
+                    config=config,
+                    inventory_rows=inventory_rows,
+                    time_context='CONTINUOUS',
+                    custom_training=settings.get('system_prompt', ''),
+                )
+            except Exception as exc:
+                response = f"Error al procesar el mensaje: {exc}"
+                needs_handoff = False
+        elif hasattr(self.engine, 'ai') and hasattr(self.engine.ai, 'generate_response'):
+            try:
+                response = self.engine.ai.generate_response(
+                    user_input=user_text,
+                    system_prompt=config.get('system_prompt'),
+                    bot_role=config.get('bot_role'),
+                    business_profile=config.get('business_profile'),
+                    inventory_path=settings.get('inventory_path'),
+                    bot_name=config.get('bot_name'),
+                    whatsapp_contacto=config.get('whatsapp_contacto'),
+                    time_context='CONTINUOUS',
+                    location=config.get('location'),
+                    website=config.get('website'),
+                    exchange_rate=config.get('exchange_rate'),
+                )
+            except Exception as exc:
+                response = f"Error al procesar el mensaje: {exc}"
+                needs_handoff = False
+
+        if needs_handoff:
+            self.schedule_handoff(thread_id, username, response, config.get('whatsapp_contacto', ''))
+
+        return response, needs_handoff
+
     def schedule_handoff(self, thread_id, username, response, whatsapp_contacto=""):
         if not thread_id or not username:
             return
@@ -243,8 +322,8 @@ class InstagramController(QObject):
         pass
 
     def _play_alert_sound(self):
-        if self.sound_effect and self.sound_effect.isAvailable():
-            self.sound_effect.play()
+        if hasattr(self, 'alerta_venta') and self.alerta_venta and self.alerta_venta.isAvailable():
+            self.alerta_venta.play()
 
     def _append_handoff_log(self, thread_id, username, response):
         print(f"Controlador: Handoff detectado para @{username}. Se espera 3 minutos antes de redirigir.")

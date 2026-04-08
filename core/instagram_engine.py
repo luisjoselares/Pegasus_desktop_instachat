@@ -696,19 +696,49 @@ class InstagramService:
                         bot_name = account_settings.get('assistant_name') or account_settings.get('bot_name') or account_settings.get('business_name') or "Alex"
                         whatsapp_contacto = account_settings.get('whatsapp_number') or account_settings.get('whatsapp_contacto') or ""
 
+                        respuesta = None
+                        needs_handoff = False
+                        inventory_rows = []
+                        inventory_path = account_settings.get('inventory_path')
+                        if inventory_path and hasattr(self.ai, '_load_inventory_rows'):
+                            inventory_rows = self.ai._load_inventory_rows(inventory_path)
+
                         try:
-                            respuesta = self.ai.generate_response(
-                                user_text,
-                                self.account_system_prompt,
-                                bot_role=account_settings.get('bot_role') or account_settings.get('context_type'),
-                                business_profile=account_settings.get('business_data') or account_settings.get('description') or account_settings.get('store_name'),
-                                inventory_path=account_settings.get('inventory_path'),
-                                bot_name=bot_name,
-                                whatsapp_contacto=whatsapp_contacto,
-                                time_context=time_context,
-                                location=account_settings.get('location') or account_settings.get('ubicacion', ''),
-                                website=account_settings.get('website', ''),
-                            )
+                            if hasattr(self.ai, 'get_response'):
+                                config = {
+                                    'country': account_settings.get('country', 'Venezuela'),
+                                    'language': account_settings.get('language', 'es'),
+                                    'currency_symbol': account_settings.get('currency_symbol', 'Bs'),
+                                    'location': account_settings.get('location', '') or account_settings.get('ubicacion', ''),
+                                    'website': account_settings.get('website', ''),
+                                    'exchange_rate': account_settings.get('exchange_rate', ''),
+                                    'bot_name': bot_name,
+                                    'whatsapp_contacto': whatsapp_contacto,
+                                    'bot_role': account_settings.get('bot_role') or account_settings.get('context_type'),
+                                    'business_profile': account_settings.get('business_data') or account_settings.get('description') or account_settings.get('store_name'),
+                                    'system_prompt': self.account_system_prompt,
+                                }
+                                respuesta, needs_handoff = self.ai.get_response(
+                                    user_input=user_text,
+                                    config=config,
+                                    inventory_rows=inventory_rows,
+                                    time_context=time_context,
+                                    custom_training=self.account_system_prompt,
+                                )
+                            else:
+                                respuesta = self.ai.generate_response(
+                                    user_text,
+                                    self.account_system_prompt,
+                                    bot_role=account_settings.get('bot_role') or account_settings.get('context_type'),
+                                    business_profile=account_settings.get('business_data') or account_settings.get('description') or account_settings.get('store_name'),
+                                    inventory_path=account_settings.get('inventory_path'),
+                                    bot_name=bot_name,
+                                    whatsapp_contacto=whatsapp_contacto,
+                                    time_context=time_context,
+                                    location=account_settings.get('location') or account_settings.get('ubicacion', ''),
+                                    website=account_settings.get('website', ''),
+                                    exchange_rate=account_settings.get('exchange_rate', ''),
+                                )
                         except RuntimeError as e:
                             self._ui_log(f"🚫 No se puede generar respuesta para hilo {thread.id}: {e}")
                             if account_id:
@@ -723,20 +753,20 @@ class InstagramService:
 
                         self._ui_log(f"💬 Respuesta generada para hilo {thread.id}.")
 
-                        is_handoff = False
-                        try:
-                            normalized = respuesta.lower() if isinstance(respuesta, str) else ''
-                            whatsapp_check = whatsapp_contacto.lower() if whatsapp_contacto else ''
-                            if whatsapp_check and whatsapp_check in normalized:
-                                is_handoff = True
-                            elif 'whatsapp' in normalized:
-                                is_handoff = True
-                            elif 'escríbenos' in normalized or 'nota al encargado' in normalized or 'te voy ayudando' in normalized:
-                                is_handoff = True
-                        except Exception:
-                            is_handoff = False
+                        if not needs_handoff:
+                            try:
+                                normalized = respuesta.lower() if isinstance(respuesta, str) else ''
+                                whatsapp_check = whatsapp_contacto.lower() if whatsapp_contacto else ''
+                                if whatsapp_check and whatsapp_check in normalized:
+                                    needs_handoff = True
+                                elif 'whatsapp' in normalized:
+                                    needs_handoff = True
+                                elif 'escríbenos' in normalized or 'nota al encargado' in normalized or 'te voy ayudando' in normalized:
+                                    needs_handoff = True
+                            except Exception:
+                                needs_handoff = False
 
-                        if is_handoff and self.handoff_callback:
+                        if needs_handoff and self.handoff_callback:
                             self._ui_log("🕒 Handoff detectado. Reteniendo respuesta y esperando tiempo de cortesía.")
                             self.handoff_callback(thread.id, username, respuesta)
                             continue

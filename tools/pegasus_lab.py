@@ -33,30 +33,41 @@ class AIResponseWorker(QThread):
     finished = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, ai_service, user_text, system_prompt, bot_role, business_profile, inventory_path, bot_name, whatsapp_contacto, time_context):
+    def __init__(self, ai_service, user_text, config, inventory_path, time_context):
         super().__init__()
         self.ai = ai_service
         self.user_text = user_text
-        self.system_prompt = system_prompt
-        self.bot_role = bot_role
-        self.business_profile = business_profile
+        self.config = config or {}
         self.inventory_path = inventory_path
-        self.bot_name = bot_name
-        self.whatsapp_contacto = whatsapp_contacto
         self.time_context = time_context
 
     def run(self):
         try:
-            respuesta = self.ai.generate_response(
-                self.user_text,
-                self.system_prompt,
-                bot_role=self.bot_role,
-                business_profile=self.business_profile,
-                inventory_path=self.inventory_path,
-                bot_name=self.bot_name,
-                whatsapp_contacto=self.whatsapp_contacto,
-                time_context=self.time_context,
-            )
+            if hasattr(self.ai, 'get_response'):
+                inventory_rows = []
+                if self.inventory_path and hasattr(self.ai, '_load_inventory_rows'):
+                    inventory_rows = self.ai._load_inventory_rows(self.inventory_path)
+                respuesta, _ = self.ai.get_response(
+                    user_input=self.user_text,
+                    config=self.config,
+                    inventory_rows=inventory_rows,
+                    time_context=self.time_context,
+                    custom_training=self.config.get('system_prompt', ''),
+                )
+            else:
+                respuesta = self.ai.generate_response(
+                    self.user_text,
+                    self.config.get('system_prompt', ''),
+                    bot_role=self.config.get('bot_role'),
+                    business_profile=self.config.get('business_profile'),
+                    inventory_path=self.inventory_path,
+                    bot_name=self.config.get('bot_name'),
+                    whatsapp_contacto=self.config.get('whatsapp_contacto'),
+                    time_context=self.time_context,
+                    location=self.config.get('location'),
+                    website=self.config.get('website'),
+                    exchange_rate=self.config.get('exchange_rate'),
+                )
             if respuesta is None:
                 raise RuntimeError("No se obtuvo respuesta del motor.")
             self.finished.emit(respuesta)
@@ -65,7 +76,7 @@ class AIResponseWorker(QThread):
 
 
 class LabPreset:
-    def __init__(self, name, role, has_inventory, wa_link, bot_name='Pegasus', business_profile='', business_data=''):
+    def __init__(self, name, role, has_inventory, wa_link, bot_name='Pegasus', business_profile='', business_data='', country='Venezuela', language='es', currency_symbol='Bs'):
         self.name = name
         self.role = role
         self.has_inventory = has_inventory
@@ -73,6 +84,9 @@ class LabPreset:
         self.bot_name = bot_name
         self.business_profile = business_profile
         self.business_data = business_data
+        self.country = country
+        self.language = language
+        self.currency_symbol = currency_symbol
         self.inventory_path = None
 
 
@@ -84,7 +98,10 @@ LAB_PRESETS = [
         wa_link="https://wa.me/584121234567",
         bot_name="Pegasus",
         business_profile="Actúa como un vendedor profesional con acceso a catálogo y promociones.",
-        business_data="Catálogo actualizado, stock disponible y entregas rápidas en Caracas."
+        business_data="Catálogo actualizado, stock disponible y entregas rápidas en Caracas.",
+        country="Venezuela",
+        language="es",
+        currency_symbol="Bs",
     ),
     LabPreset(
         name="Soporte Vacío",
@@ -93,7 +110,10 @@ LAB_PRESETS = [
         wa_link="https://wa.me/584121234567",
         bot_name="Pegasus",
         business_profile="Actúa como soporte técnico, sin inventario disponible y con prioridad en resolver dudas.",
-        business_data="Atención clara y profesional, enfócate en la resolución del cliente."
+        business_data="Atención clara y profesional, enfócate en la resolución del cliente.",
+        country="Venezuela",
+        language="es",
+        currency_symbol="Bs",
     ),
     LabPreset(
         name="Crisis de Reclamo",
@@ -102,7 +122,10 @@ LAB_PRESETS = [
         wa_link="https://wa.me/584121234567",
         bot_name="Pegasus",
         business_profile="Actúa con máxima empatía y prioridad. Responde un reclamo serio con calma y ofrece solución inmediata.",
-        business_data="Manejo de quejas, cambios y reembolsos. Si la situación lo requiere, deriva rápido a WhatsApp."
+        business_data="Manejo de quejas, cambios y reembolsos. Si la situación lo requiere, deriva rápido a WhatsApp.",
+        country="Venezuela",
+        language="es",
+        currency_symbol="Bs",
     ),
 ]
 
@@ -754,6 +777,7 @@ class PegasusLab(QWidget):
         business_profile = ''
         inventory_path = None
 
+        source = {}
         if self.active_test_profile:
             profile = self.active_test_profile
             bot_name = profile.get('bot_name', 'Alex')
@@ -762,6 +786,7 @@ class PegasusLab(QWidget):
             business_profile = profile.get('business_profile', '')
             system_prompt = profile.get('system_prompt', '')
             inventory_path = profile.get('inventory_path')
+            source = profile
             self._append_log(f"[LAB] Enviando IA con perfil activo: Cuenta {profile.get('insta_user')} | Rol forzado: {bot_role}.")
         elif self.selected_preset:
             preset = self.selected_preset
@@ -772,6 +797,14 @@ class PegasusLab(QWidget):
             system_prompt = preset.business_profile or ''
             self.has_inventory = preset.has_inventory
             inventory_path = preset.inventory_path if preset.has_inventory else None
+            source = {
+                'country': preset.country,
+                'language': preset.language,
+                'currency_symbol': preset.currency_symbol,
+                'location': None,
+                'website': None,
+                'exchange_rate': None,
+            }
             self._append_log(f"[PRESET] Enviando IA con preset {preset.name}: rol={bot_role}, inventario={self.has_inventory}.")
         else:
             if not self.account:
@@ -788,6 +821,7 @@ class PegasusLab(QWidget):
             business_profile = self.account.get('business_data') or self.account.get('description') or self.account.get('store_name')
             system_prompt = self.account.get('system_prompt') or ''
             inventory_path = self.account.get('inventory_path') if self.has_inventory else None
+            source = self.account
             self._append_log(f"[DB] Usando bot_name={bot_name}, whatsapp_contacto={whatsapp_contacto}, inventory_path={inventory_path}, rol={bot_role}.")
 
         if not self.has_inventory:
@@ -796,15 +830,24 @@ class PegasusLab(QWidget):
                 "Esta cuenta no tiene inventario vinculado. Responde sin mencionar costos ni descuentos.\n" + system_prompt
             )
 
+        config = {
+            'country': source.get('country'),
+            'language': source.get('language'),
+            'currency_symbol': source.get('currency_symbol'),
+            'location': source.get('location'),
+            'website': source.get('website'),
+            'exchange_rate': source.get('exchange_rate'),
+            'bot_name': bot_name,
+            'whatsapp_contacto': whatsapp_contacto,
+            'bot_role': bot_role,
+            'business_profile': business_profile,
+            'system_prompt': system_prompt,
+        }
         self.worker = AIResponseWorker(
             self.ai,
             bundled_text,
-            system_prompt,
-            bot_role,
-            business_profile,
+            config,
             inventory_path,
-            bot_name,
-            whatsapp_contacto,
             time_context,
         )
         self.worker.finished.connect(self._on_ai_finished)

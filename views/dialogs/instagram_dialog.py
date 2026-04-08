@@ -591,6 +591,30 @@ class AddAccountDialog(QDialog):
         self.txt_website.setPlaceholderText("Ej: https://miempresa.com")
         layout.addWidget(self.txt_website)
 
+        self.txt_country_label = QLabel("¿En qué país opera tu negocio?")
+        self.txt_country_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_country_label)
+
+        self.txt_country = QLineEdit()
+        self.txt_country.setPlaceholderText("Ej: Venezuela")
+        layout.addWidget(self.txt_country)
+
+        self.txt_language_label = QLabel("¿Cuál es el idioma principal de atención?")
+        self.txt_language_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_language_label)
+
+        self.txt_language = QLineEdit()
+        self.txt_language.setPlaceholderText("Ej: es")
+        layout.addWidget(self.txt_language)
+
+        self.txt_currency_symbol_label = QLabel("¿Cuál es el símbolo de tu moneda?")
+        self.txt_currency_symbol_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_currency_symbol_label)
+
+        self.txt_currency_symbol = QLineEdit()
+        self.txt_currency_symbol.setPlaceholderText("Ej: Bs")
+        layout.addWidget(self.txt_currency_symbol)
+
         self.txt_tasa_cambio_label = QLabel("¿Cuál es tu tasa de cambio preferida?")
         self.txt_tasa_cambio_label.setProperty("class", "QuestionLabel")
         layout.addWidget(self.txt_tasa_cambio_label)
@@ -744,6 +768,9 @@ class AddAccountDialog(QDialog):
             f"Inventario conectado: {inventory} ({inventory_info})",
             f"Ubicación: {self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else 'No definido'}",
             f"Sitio web: {self.txt_website.text().strip() if hasattr(self, 'txt_website') else 'No definido'}",
+            f"País: {self.txt_country.text().strip() if hasattr(self, 'txt_country') else 'No definido'}",
+            f"Idioma: {self.txt_language.text().strip() if hasattr(self, 'txt_language') else 'No definido'}",
+            f"Símbolo de moneda: {self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'No definido'}",
             f"Tasa de cambio: {self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else 'No definida'}",
             f"WhatsApp de contacto: {self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else 'No definido'}",
             f"Métodos de pago: {', '.join(payments) if payments else 'No definidos'}",
@@ -774,19 +801,45 @@ class AddAccountDialog(QDialog):
         self.page6_status.setText("Generando respuesta...")
         self.preview_output.setPlainText("Generando respuesta...")
         try:
-            answer = self.ai_service.generate_response(
-                user_input=question,
-                system_prompt=self.hidden_prompt,
-                bot_role=self.personality_selected,
-                business_profile=f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
-                inventory_path=self.csv_path,
-                bot_name=self.assistant_name_input.text().strip(),
-                whatsapp_contacto=self.txt_whatsapp.text().strip(),
-                location=self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
-                website=self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
-                time_context="CONTINUOUS",
-                custom_training=self.custom_training_input.toPlainText().strip(),
-            )
+            if hasattr(self.ai_service, 'get_response'):
+                config = {
+                    'country': self.txt_country.text().strip() if hasattr(self, 'txt_country') else 'Venezuela',
+                    'language': self.txt_language.text().strip() if hasattr(self, 'txt_language') else 'es',
+                    'currency_symbol': self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'Bs',
+                    'location': self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
+                    'website': self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
+                    'exchange_rate': self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
+                    'bot_name': self.assistant_name_input.text().strip(),
+                    'whatsapp_contacto': self.txt_whatsapp.text().strip(),
+                    'bot_role': self.personality_selected,
+                    'business_profile': f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
+                    'system_prompt': self.hidden_prompt,
+                }
+                inventory_rows = []
+                if self.csv_path and hasattr(self.ai_service, '_load_inventory_rows'):
+                    inventory_rows = self.ai_service._load_inventory_rows(self.csv_path)
+                answer, _ = self.ai_service.get_response(
+                    user_input=question,
+                    config=config,
+                    inventory_rows=inventory_rows,
+                    time_context="CONTINUOUS",
+                    custom_training=self.custom_training_input.toPlainText().strip(),
+                )
+            else:
+                answer = self.ai_service.generate_response(
+                    user_input=question,
+                    system_prompt=self.hidden_prompt,
+                    bot_role=self.personality_selected,
+                    business_profile=f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
+                    inventory_path=self.csv_path,
+                    bot_name=self.assistant_name_input.text().strip(),
+                    whatsapp_contacto=self.txt_whatsapp.text().strip(),
+                    location=self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
+                    website=self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
+                    exchange_rate=self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
+                    time_context="CONTINUOUS",
+                    custom_training=self.custom_training_input.toPlainText().strip(),
+                )
             if answer is None:
                 self.preview_output.setPlainText("No se pudo generar respuesta. Verifica la conexión de IA o la llave activa.")
             else:
@@ -846,6 +899,12 @@ class AddAccountDialog(QDialog):
             self.txt_ubicacion.setText(account_data.get('location', account_data.get('ubicacion', '')))
         if hasattr(self, 'txt_website'):
             self.txt_website.setText(account_data.get('website', ''))
+        if hasattr(self, 'txt_country'):
+            self.txt_country.setText(account_data.get('country', 'Venezuela'))
+        if hasattr(self, 'txt_language'):
+            self.txt_language.setText(account_data.get('language', 'es'))
+        if hasattr(self, 'txt_currency_symbol'):
+            self.txt_currency_symbol.setText(account_data.get('currency_symbol', 'Bs'))
         if hasattr(self, 'txt_tasa_cambio'):
             self.txt_tasa_cambio.setText(account_data.get('exchange_rate', ''))
         if hasattr(self, 'txt_envios'):
@@ -1174,6 +1233,9 @@ class AddAccountDialog(QDialog):
             "security_level": "High",
             "system_prompt_final": self.hidden_prompt,
             "whatsapp_number": self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else "",
+            "country": self.txt_country.text().strip() if hasattr(self, 'txt_country') else "Venezuela",
+            "language": self.txt_language.text().strip() if hasattr(self, 'txt_language') else "es",
+            "currency_symbol": self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else "Bs",
             "location": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
             "website": self.txt_website.text().strip() if hasattr(self, 'txt_website') else "",
             "exchange_rate": self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else "",

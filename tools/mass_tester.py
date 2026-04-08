@@ -1,11 +1,13 @@
 import os
+import re
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+ROOT_DIR = BASE_DIR
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -39,14 +41,14 @@ class PegasusAutoTester:
                     'inventory': 'Producto A - Precio: 15 USD - Stock: 10\nProducto B - Precio: 120000 Bs - Stock: 5',
                     'location': '',
                     'website': '',
-                    'exchange_rate': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
                 },
                 'rol': 'VENDEDOR',
                 'contexto_rapido': 'RETAIL',
                 'historial_chat': ['Hola', 'Estoy viendo algunos productos.', '¿Tienen stock?'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Aceptan pesos?',
-                'condicion_exito': lambda r: ('usd' in r.lower() or 'bolívares' in r.lower() or 'bs' in r.lower()) and 'pesos' not in r.lower(),
+                'condicion_exito': lambda r: (('usd' in r.lower() or 'bolívares' in r.lower() or 'bs' in r.lower()) and not any(term in r.lower() for term in ['pesos', 'de pesos'])) and any(term in r.lower() for term in ['tasa', '3.600.000', '3600000']),
             },
             {
                 'id': 'Test 2 - Soporte Queja Crítica',
@@ -258,6 +260,25 @@ class PegasusAutoTester:
                 'condicion_exito': lambda r: 'no contamos con sede física' in r.lower() or 'digital' in r.lower(),
             },
             {
+                'id': 'Test 15a - Consulta de Sitio Web',
+                'tipo_cuenta': 'Servicio',
+                'cuenta_mock': {
+                    'bot_name': 'Ana',
+                    'location': '',
+                    'website': 'https://miempresa.com',
+                    'exchange_rate': '',
+                    'whatsapp_contacto': 'https://wa.me/584120000000',
+                    'business_profile': 'Servicio digital que opera desde cualquier lugar.',
+                    'inventory': None,
+                },
+                'rol': 'SOPORTE',
+                'contexto_rapido': 'PROFESSIONAL',
+                'historial_chat': ['Hola', 'Quiero conocer más de sus servicios.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': '¿Tienen página web o catálogo online?',
+                'condicion_exito': lambda r: 'https://miempresa.com' in r.lower() and 'no tenemos sede física' not in r.lower(),
+            },
+            {
                 'id': 'Test 15 - Usuario comparte Post',
                 'tipo_cuenta': 'Servicio',
                 'cuenta_mock': {
@@ -382,23 +403,59 @@ class PegasusAutoTester:
         self.active_test_profile = profile
         return profile
 
+    def _build_inventory_rows_from_text(self, inventory_text):
+        if not inventory_text:
+            return []
+        rows = []
+        for line in str(inventory_text).splitlines():
+            if not line.strip():
+                continue
+            parts = [part.strip() for part in re.split(r'\s*-\s*|;|,', line) if part.strip()]
+            if parts:
+                rows.append(parts)
+        return rows
+
     def run_test(self, case):
         profile = self._build_active_test_profile(case)
         message = case['mensaje_entrante']
 
         try:
-            response = self.ai.generate_response(
-                user_input=message,
-                system_prompt=profile.get('business_profile'),
-                bot_role=profile.get('bot_role'),
-                business_profile=profile.get('business_profile'),
-                inventory=profile.get('inventory'),
-                bot_name=profile.get('bot_name'),
-                whatsapp_contacto=profile.get('whatsapp_contacto'),
-                time_context=case['time_context'],
-                location=profile.get('location'),
-                website=profile.get('website'),
-            )
+            if hasattr(self.ai, 'get_response'):
+                config = {
+                    'country': case.get('country', 'Venezuela'),
+                    'language': case.get('language', 'es'),
+                    'currency_symbol': case.get('currency_symbol', 'Bs'),
+                    'location': profile.get('location', ''),
+                    'website': profile.get('website', ''),
+                    'exchange_rate': profile.get('exchange_rate', ''),
+                    'bot_name': profile.get('bot_name'),
+                    'whatsapp_contacto': profile.get('whatsapp_contacto'),
+                    'bot_role': profile.get('bot_role'),
+                    'business_profile': profile.get('business_profile'),
+                    'system_prompt': profile.get('business_profile'),
+                }
+                inventory_rows = self._build_inventory_rows_from_text(profile.get('inventory'))
+                response, _ = self.ai.get_response(
+                    user_input=message,
+                    config=config,
+                    inventory_rows=inventory_rows,
+                    time_context=case['time_context'],
+                    custom_training=profile.get('business_profile'),
+                )
+            else:
+                response = self.ai.generate_response(
+                    user_input=message,
+                    system_prompt=profile.get('business_profile'),
+                    bot_role=profile.get('bot_role'),
+                    business_profile=profile.get('business_profile'),
+                    inventory=profile.get('inventory'),
+                    bot_name=profile.get('bot_name'),
+                    whatsapp_contacto=profile.get('whatsapp_contacto'),
+                    time_context=case['time_context'],
+                    location=profile.get('location'),
+                    website=profile.get('website'),
+                    exchange_rate=profile.get('exchange_rate'),
+                )
         except Exception as exc:
             return False, None, f'Error IA: {exc}'
 
