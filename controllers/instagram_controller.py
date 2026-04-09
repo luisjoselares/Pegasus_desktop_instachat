@@ -1,4 +1,7 @@
 # controllers/instagram_controller.py
+import json
+import re
+from datetime import datetime, timedelta
 from os import path
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QUrl
 from PyQt6.QtMultimedia import QSoundEffect
@@ -104,6 +107,8 @@ class InstagramController(QObject):
             changes['business_data'] = data['business_data']
         if data.get('bot_role') is not None:
             changes['bot_role'] = data['bot_role']
+        if data.get('bot_mission') is not None:
+            changes['bot_mission'] = data['bot_mission']
         if data.get('structured_identity') is not None:
             changes['structured_identity'] = data['structured_identity']
         if data.get('prompt') is not None:
@@ -122,6 +127,10 @@ class InstagramController(QObject):
             changes['website'] = data['website']
         if data.get('exchange_rate') is not None:
             changes['exchange_rate'] = data['exchange_rate']
+        if data.get('payment_methods') is not None:
+            changes['payment_methods'] = data['payment_methods']
+        if data.get('info_eventos') is not None:
+            changes['info_eventos'] = data['info_eventos']
         if data.get('whatsapp_number') is not None:
             changes['whatsapp_number'] = data['whatsapp_number']
         if data.get('start') is not None:
@@ -206,6 +215,8 @@ class InstagramController(QObject):
             'location': settings.get('location', ''),
             'website': settings.get('website', ''),
             'exchange_rate': settings.get('exchange_rate', ''),
+            'payment_methods': settings.get('payment_methods', []),
+            'info_eventos': settings.get('info_eventos', ''),
             'bot_name': settings.get('assistant_name') or settings.get('bot_name') or settings.get('business_name'),
             'whatsapp_contacto': settings.get('whatsapp_number') or settings.get('whatsapp_contacto', ''),
             'bot_role': settings.get('bot_role') or settings.get('context_type'),
@@ -213,10 +224,43 @@ class InstagramController(QObject):
             'system_prompt': settings.get('system_prompt', ''),
         }
 
+        custom_training = settings.get('system_prompt', '').strip()
+        recent_history = []
+        if hasattr(self.db, 'obtener_ultimos_mensajes'):
+            recent_history = self.db.obtener_ultimos_mensajes(thread_id, self.cliente_id, limit=10)
+        elif hasattr(self.db, 'obtener_conversacion_completa'):
+            recent_history = self.db.obtener_conversacion_completa(thread_id, self.cliente_id)[-10:]
+
+        if recent_history:
+            history_lines = []
+            for item in reversed(recent_history):
+                timestamp = item.get('fecha') or item.get('timestamp', '')
+                message = item.get('mensaje_usuario') or item.get('last_message', '')
+                if item.get('respuesta_ia'):
+                    history_lines.append(f"[{timestamp}] Cliente: {message}")
+                    history_lines.append(f"[{timestamp}] IA: {item.get('respuesta_ia')}")
+                else:
+                    history_lines.append(f"[{timestamp}] Cliente: {message}")
+            custom_training += "\n\nHISTORIAL RECIENTE:\n" + "\n".join(history_lines)
+            try:
+                last_timestamp = recent_history[0].get('fecha') or recent_history[0].get('timestamp')
+                if last_timestamp:
+                    last_dt = datetime.fromisoformat(last_timestamp)
+                    if datetime.now() - last_dt > timedelta(minutes=30):
+                        custom_training += "\n\n[CONTEXTO]: El cliente regresó después de más de 30 minutos. Retoma la conversación con naturalidad desde el último intercambio."
+            except Exception:
+                pass
+
         inventory_rows = []
         inventory_path = settings.get('inventory_path')
         if inventory_path and hasattr(self.engine, 'ai') and hasattr(self.engine.ai, '_load_inventory_rows'):
             inventory_rows = self.engine.ai._load_inventory_rows(inventory_path)
+
+        user_id = username or thread_id
+        user_state_record = self.db.get_user_state(user_id) if hasattr(self.db, 'get_user_state') else None
+        current_state = user_state_record.get('current_state') if user_state_record else 'CONSULTA'
+        if user_state_record is None and hasattr(self.db, 'update_user_state'):
+            self.db.update_user_state(user_id, 'CONSULTA', {'initialized': True})
 
         response = None
         needs_handoff = False
@@ -227,7 +271,9 @@ class InstagramController(QObject):
                     config=config,
                     inventory_rows=inventory_rows,
                     time_context='CONTINUOUS',
-                    custom_training=settings.get('system_prompt', ''),
+                    custom_training=custom_training,
+                    current_state=current_state,
+                    bot_mission=settings.get('bot_mission', 'Ventas'),
                 )
             except Exception as exc:
                 response = f"Error al procesar el mensaje: {exc}"
@@ -243,13 +289,83 @@ class InstagramController(QObject):
                     bot_name=config.get('bot_name'),
                     whatsapp_contacto=config.get('whatsapp_contacto'),
                     time_context='CONTINUOUS',
+                    custom_training=custom_training,
                     location=config.get('location'),
                     website=config.get('website'),
                     exchange_rate=config.get('exchange_rate'),
+                    currency_symbol=config.get('currency_symbol'),
+                    payment_methods=config.get('payment_methods'),
+                    info_eventos=config.get('info_eventos'),
                 )
             except Exception as exc:
                 response = f"Error al procesar el mensaje: {exc}"
                 needs_handoff = False
+
+        if response and hasattr(self.db, 'update_user_state'):
+            mission = str(settings.get('bot_mission', 'Ventas') or 'Ventas').strip().upper()
+            if 'VENTAS' in mission or 'RETAIL' in mission:
+                mission = 'RETAIL'
+            elif 'CONCIERGE' in mission or 'AGENDA' in mission or 'CITAS' in mission:
+                mission = 'CONCIERGE'
+            elif 'LEAD' in mission or 'INFLUENCER' in mission or 'COACH' in mission:
+                mission = 'LEAD_GEN'
+            elif 'SOPORTE' in mission or 'SUPPORT' in mission:
+                mission = 'SUPPORT'
+            else:
+                mission = 'RETAIL'
+
+            if any(hasattr(self.db, method) for method in ['insert_order', 'insert_appointment', 'insert_lead']):
+                match = re.search(r"<DATA>(.*?)</DATA>", response, re.DOTALL | re.IGNORECASE)
+                if match:
+                    data_block = match.group(1).strip()
+                    try:
+                        extracted_data = json.loads(data_block)
+                    except Exception:
+                        extracted_data = None
+
+                    if extracted_data:
+                        final_response = re.sub(r"<DATA>.*?</DATA>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
+                        cliente_id_value = self.cliente_id or settings.get('cliente_id', '')
+
+                        if mission == 'CONCIERGE' and hasattr(self.db, 'insert_appointment'):
+                            self.db.insert_appointment(
+                                cliente_id=cliente_id_value,
+                                nombre=extracted_data.get('nombre', ''),
+                                telefono=extracted_data.get('telefono', ''),
+                                fecha=extracted_data.get('fecha', ''),
+                                hora=extracted_data.get('hora', ''),
+                                detalles=extracted_data.get('detalles', '') or extracted_data.get('producto', '')
+                            )
+                        elif mission == 'LEAD_GEN' and hasattr(self.db, 'insert_lead'):
+                            self.db.insert_lead(
+                                cliente_id=cliente_id_value,
+                                nombre=extracted_data.get('nombre', ''),
+                                telefono=extracted_data.get('telefono', ''),
+                                email=extracted_data.get('email', ''),
+                                interes=extracted_data.get('interes', '') or extracted_data.get('producto', '')
+                            )
+                        elif hasattr(self.db, 'insert_order'):
+                            self.db.insert_order(
+                                cliente_id=cliente_id_value,
+                                producto=extracted_data.get('producto', ''),
+                                monto=float(extracted_data.get('monto', 0) or 0),
+                                ref=extracted_data.get('referencia', ''),
+                                envio=extracted_data.get('envio', '')
+                            )
+
+                        self.db.update_user_state(user_id, 'FINALIZADO', {'last_data': extracted_data, 'mission': mission})
+                        if hasattr(self.alerta_venta, 'play'):
+                            self.alerta_venta.play()
+                        response = final_response
+                    else:
+                        response = re.sub(r"<DATA>.*?</DATA>", "", response, flags=re.DOTALL | re.IGNORECASE).strip()
+                else:
+                    normalized_response = (response or "").lower()
+                    transactional_keywords = [
+                        'nombre', 'cédula', 'cedula', 'teléfono', 'telefono', 'dirección', 'direccion', 'referencia', 'pago'
+                    ]
+                    if '?' in normalized_response and any(keyword in normalized_response for keyword in transactional_keywords):
+                        self.db.update_user_state(user_id, 'ESPERANDO_DATOS', {'prompted_for': 'datos_de_envio'})
 
         if needs_handoff:
             self.schedule_handoff(thread_id, username, response, config.get('whatsapp_contacto', ''))

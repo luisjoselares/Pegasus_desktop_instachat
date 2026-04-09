@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import json
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -31,7 +32,7 @@ class PegasusAutoTester:
             print('[ERROR] No se encontró la GROQ_API_KEY. Asegúrate de configurar tu archivo .env')
 
     def _build_test_cases(self):
-        return [
+        cases = [
             {
                 'id': 'Test 1 - Vendedor Moneda',
                 'cuenta_mock': {
@@ -44,11 +45,107 @@ class PegasusAutoTester:
                     'exchange_rate': '1 USD = 3.600.000 Bs',
                 },
                 'rol': 'VENDEDOR',
+                'bot_mission': 'RETAIL',
                 'contexto_rapido': 'RETAIL',
                 'historial_chat': ['Hola', 'Estoy viendo algunos productos.', '¿Tienen stock?'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Aceptan pesos?',
                 'condicion_exito': lambda r: (('usd' in r.lower() or 'bolívares' in r.lower() or 'bs' in r.lower()) and not any(term in r.lower() for term in ['pesos', 'de pesos'])) and any(term in r.lower() for term in ['tasa', '3.600.000', '3600000']),
+            },
+            {
+                'id': 'Perfil RETAIL - Venta rápida',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Tienda retail con atención rápida y pagos online.',
+                    'inventory': 'Producto X - Precio: 20 USD - Stock: 8\nProducto Y - Precio: 12 USD - Stock: 15',
+                    'location': '',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                },
+                'rol': 'VENDEDOR',
+                'bot_mission': 'RETAIL',
+                'contexto_rapido': 'RETAIL',
+                'historial_chat': ['Hola', 'Estoy interesado en un producto.', '¿Tienen disponibilidad?'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Quiero comprar el Producto X y necesito saber cómo puedo pagar.',
+                'condicion_exito': lambda r: 'producto x' in r.lower() and any(term in r.lower() for term in ['pagar', 'pago', 'transferencia', 'whatsapp', 'wa.me']),
+            },
+            {
+                'id': 'Perfil RETAIL - Cierre inmediato',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Tienda retail con atención rápida y pagos online.',
+                    'inventory': 'Producto X - Precio: 20 USD - Stock: 8\nProducto Y - Precio: 12 USD - Stock: 15',
+                    'location': '',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                },
+                'rol': 'VENDEDOR',
+                'bot_mission': 'RETAIL',
+                'contexto_rapido': 'RETAIL',
+                'historial_chat': ['Hola', 'Estoy listo para pagar.', 'Ya tengo la dirección.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Nombre: Juan Pérez. Cédula: V12345678. Teléfono: 04141234567. Dirección: Av. Libertador 456. Referencia de Pago: PAGO123. Producto: Mochila Urbana.',
+                'condicion_exito': lambda r: '<data>' in r.lower() and not any(term in r.lower() for term in ['más detalles', 'detalle', 'tamaño', 'color', 'producto']) and 'referencia' in r.lower(),
+            },
+            {
+                'id': 'Perfil CONCIERGE - Cita médica',
+                'cuenta_mock': {
+                    'bot_name': 'Dra. Valentina',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Servicio de concierge médico que agenda citas y recopila motivo y horario.',
+                    'inventory': None,
+                    'location': '',
+                    'website': '',
+                    'exchange_rate': '',
+                },
+                'rol': 'CONCIERGE',
+                'bot_mission': 'CONCIERGE',
+                'contexto_rapido': 'CONCIERGE',
+                'historial_chat': ['Hola', 'Necesito una consulta médica urgente.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Quisiera agendar una cita médica para el próximo martes. Tengo dolor de cabeza y fiebre.',
+                'condicion_exito': lambda r: 'horario' in r.lower() and not any(term in r.lower() for term in ['lo siento', 'no puedo', 'en este consultorio', 'lamento']),
+            },
+            {
+                'id': 'Perfil LEAD_GEN - Mentoría',
+                'cuenta_mock': {
+                    'bot_name': 'Sofía Coach',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Programa de mentoría para líderes que busca captar nuevos prospectos y llevarlos a WhatsApp.',
+                    'inventory': None,
+                    'location': '',
+                    'website': '',
+                    'exchange_rate': '',
+                },
+                'rol': 'MARCA PERSONAL',
+                'bot_mission': 'LEAD_GEN',
+                'contexto_rapido': 'PERSONAL_BRAND',
+                'historial_chat': ['Hola', 'Estoy interesado en crecer como líder.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Quiero una mentoría para mejorar mi visión profesional. ¿Cómo puedo contactarte?',
+                'condicion_exito': lambda r: 'objetivo' in r.lower() and any(term in r.lower() for term in ['whatsapp', 'wa.me', 'contacto']),
+            },
+            {
+                'id': 'Perfil SUPPORT - Consulta técnica',
+                'cuenta_mock': {
+                    'bot_name': 'Soporte Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Centro de soporte técnico que resuelve problemas de conectividad y servicio.',
+                    'inventory': None,
+                    'location': '',
+                    'website': '',
+                    'exchange_rate': '',
+                },
+                'rol': 'SOPORTE',
+                'bot_mission': 'SUPPORT',
+                'contexto_rapido': 'PROFESSIONAL',
+                'historial_chat': ['Hola', 'Mi servicio no funciona desde hace horas.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Mi internet no conecta y necesito ayuda urgente, ¿pueden resolverlo?',
+                'condicion_exito': lambda r: any(term in r.lower() for term in ['soporte', 'ayuda', 'técnico', 'resolución', 'resolver']),
             },
             {
                 'id': 'Test 2 - Soporte Queja Crítica',
@@ -376,7 +473,80 @@ class PegasusAutoTester:
                 'mensaje_entrante': '[SISTEMA: El usuario compartió un REEL]',
                 'condicion_exito': lambda r: 'reel' in r.lower() and any(term in r.lower() for term in ['qué buen', 'qué buena', 'interesante', 'me gustó', 'favorito', 'me pareció']),
             },
+            {
+                'id': 'Test 20 - Cierre de Venta Completo',
+                'tipo_cuenta': 'Retail',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Tienda de calzado con envíos nacionales y pago móvil disponible.',
+                    'inventory': 'Zapatos Running - Precio: 30 USD - Stock: 12\nSandalias Urbanas - Precio: 25 USD - Stock: 8',
+                    'location': 'Av. Libertador 456, Caracas',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                },
+                'rol': 'VENDEDOR',
+                'contexto_rapido': 'RETAIL',
+                'estado_inicial': 'ESPERANDO_DATOS',
+                'bot_mission': 'Ventas',
+                'historial_chat': ['Hola', '¿Cuánto cuesta el envío?'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Nombre: Juan Pérez. Cédula: V12345678. Teléfono: 04141234567. Dirección: Av. Libertador 456. Referencia de Pago: PAGO123. Quiero los Zapatos Running.',
+                'espera_json': True,
+                'condicion_exito': lambda r: '<data>' in r.lower() and 'zapatos running' in r.lower(),
+            },
+            {
+                'id': 'Test 21 - Cierre de Venta con Pago',
+                'tipo_cuenta': 'Retail',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Electrónica con envío puerta a puerta y referencia de pago por transferencia.',
+                    'inventory': 'Auriculares Bluetooth - Precio: 45 USD - Stock: 5\nCargador USB-C - Precio: 12 USD - Stock: 20',
+                    'location': 'Centro Comercial Plaza',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                },
+                'rol': 'VENDEDOR',
+                'contexto_rapido': 'RETAIL',
+                'estado_inicial': 'ESPERANDO_DATOS',
+                'bot_mission': 'Ventas',
+                'historial_chat': ['Hola', 'Me interesa un auricular.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Confirmo mi compra de Auriculares Bluetooth. Nombre: Ana Gómez. Cédula: V87654321. Teléfono: 04241234567. Dirección: Calle 10, Local 2. Referencia de Pago: TRANSFER456.',
+                'espera_json': True,
+                'condicion_exito': lambda r: '<data>' in r.lower() and 'auriculares bluetooth' in r.lower(),
+            },
+            {
+                'id': 'Test 22 - Cierre de Venta con Envío',
+                'tipo_cuenta': 'Retail',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Accesorios con entrega rápida y proceso de pago seguro.',
+                    'inventory': 'Mochila Urbana - Precio: 55 USD - Stock: 7\nCinturón de Cuero - Precio: 18 USD - Stock: 14',
+                    'location': 'Zona Comercial Este',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                },
+                'rol': 'VENDEDOR',
+                'contexto_rapido': 'RETAIL',
+                'estado_inicial': 'ESPERANDO_DATOS',
+                'bot_mission': 'Ventas',
+                'historial_chat': ['Hola', 'Quisiera hacer un pedido.'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Ya tengo todo listo para pagar. Nombre: Luis Pérez. Cédula: V11122233. Teléfono: 04141239876. Dirección: Av. Las Acacias 78. Referencia de Pago: PAGO789. Producto: Mochila Urbana.',
+                'espera_json': True,
+                'condicion_exito': lambda r: '<data>' in r.lower() and 'mochila urbana' in r.lower(),
+            },
         ]
+
+        for case in cases:
+            case.setdefault('estado_inicial', 'CONSULTA')
+            case.setdefault('current_state', case['estado_inicial'])
+            case.setdefault('bot_mission', 'Ventas')
+            case.setdefault('espera_json', False)
+        return cases
 
     def _evaluate_condition(self, case, response):
         if response is None:
@@ -430,9 +600,11 @@ class PegasusAutoTester:
                     'exchange_rate': profile.get('exchange_rate', ''),
                     'bot_name': profile.get('bot_name'),
                     'whatsapp_contacto': profile.get('whatsapp_contacto'),
-                    'bot_role': profile.get('bot_role'),
+                    'bot_role': profile.get('rol'),
                     'business_profile': profile.get('business_profile'),
                     'system_prompt': profile.get('business_profile'),
+                    'current_state': case.get('current_state', case.get('estado_inicial', 'CONSULTA')),
+                    'bot_mission': case.get('bot_mission', 'Ventas'),
                 }
                 inventory_rows = self._build_inventory_rows_from_text(profile.get('inventory'))
                 response, _ = self.ai.get_response(
@@ -441,6 +613,8 @@ class PegasusAutoTester:
                     inventory_rows=inventory_rows,
                     time_context=case['time_context'],
                     custom_training=profile.get('business_profile'),
+                    current_state=config.get('current_state', 'CONSULTA'),
+                    bot_mission=config.get('bot_mission', 'Ventas'),
                 )
             else:
                 response = self.ai.generate_response(
@@ -458,6 +632,15 @@ class PegasusAutoTester:
                 )
         except Exception as exc:
             return False, None, f'Error IA: {exc}'
+
+        if case.get('espera_json'):
+            match = re.search(r"<DATA>(.*?)</DATA>", response or "", re.DOTALL | re.IGNORECASE)
+            if not match:
+                return False, response, 'Esperaba bloque <DATA>, pero no se encontró.'
+            try:
+                json.loads(match.group(1).strip())
+            except Exception as exc:
+                return False, response, f'Bloque <DATA> inválido: {exc}'
 
         passed, reason = self._evaluate_condition(case, response)
         if passed:
@@ -477,35 +660,61 @@ class PegasusAutoTester:
 
             passed = 0
             failed = 0
+            mission_summary = {}
+
+            cases_by_mission = {}
             for case in self.test_cases:
-                ok, response, reason = self.run_test(case)
-                icon = '✅' if ok else '❌'
-                status_text = 'PASS' if ok else 'FAIL'
-                print(f"[{icon} {status_text}] {case['id']}")
+                mission = case.get('bot_mission', case.get('contexto_rapido', 'RETAIL')).upper()
+                cases_by_mission.setdefault(mission, []).append(case)
 
-                report_file.write(f"### {icon} {case['id']}\n")
-                report_file.write(f"**Estado:** {status_text}\n")
-                report_file.write(f"**Tipo de Cuenta:** {case.get('tipo_cuenta', 'N/A')}\n")
-                report_file.write(f"**Contexto de la Cuenta:** {case['cuenta_mock']['business_profile']}\n")
-                contexto_masticado = case.get('contexto_masticado') or f"Rol {case['rol']} / Industria {case['contexto_rapido']}"
-                report_file.write(f"**Contexto Masticado:** {contexto_masticado}\n")
-                report_file.write(f"**Rol Forzado:** {case['rol']} | **Industria:** {case['contexto_rapido']}\n\n")
-                report_file.write("**--- Historial ---**\n")
-                for index, mensaje in enumerate(case.get('historial_chat', []) or []):
-                    etiqueta = 'Cliente' if index % 2 == 0 else 'Pegasus'
-                    report_file.write(f"- **{etiqueta}:** {mensaje}\n")
-                report_file.write(f"\n**Cliente (Input):** {case['mensaje_entrante']}\n")
-                report_file.write(f"**Pegasus (Respuesta Real):** {response or 'Sin respuesta'}\n\n")
-                report_file.write(f"**Veredicto Detallado:** {reason or 'No se proporcionó razón.'}\n")
-                report_file.write('---\n\n')
+            for mission in sorted(cases_by_mission.keys()):
+                report_file.write(f"## Misión del Bot: {mission}\n\n")
+                mission_passed = 0
+                mission_failed = 0
 
-                if ok:
-                    passed += 1
-                else:
-                    failed += 1
+                for case in cases_by_mission[mission]:
+                    ok, response, reason = self.run_test(case)
+                    icon = '✅' if ok else '❌'
+                    status_text = 'PASS' if ok else 'FAIL'
+                    print(f"[{icon} {status_text}] {case['id']} ({mission})")
 
-            report_file.write('## Resumen:\n')
-            report_file.write(f'Total: {total} | ✅ Pasaron: {passed} | ❌ Fallaron: {failed}\n')
+                    report_file.write(f"### {icon} {case['id']}\n")
+                    report_file.write(f"**Misión del Bot:** {mission}\n")
+                    report_file.write(f"**Estado:** {status_text}\n")
+                    report_file.write(f"**Tipo de Cuenta:** {case.get('tipo_cuenta', 'N/A')}\n")
+                    report_file.write(f"**Contexto de la Cuenta:** {case['cuenta_mock']['business_profile']}\n")
+                    contexto_masticado = case.get('contexto_masticado') or f"Rol {case['rol']} / Industria {case['contexto_rapido']}"
+                    report_file.write(f"**Contexto Masticado:** {contexto_masticado}\n")
+                    report_file.write(f"**Rol Forzado:** {case['rol']} | **Industria:** {case['contexto_rapido']}\n\n")
+                    report_file.write("**--- Historial ---**\n")
+                    for index, mensaje in enumerate(case.get('historial_chat', []) or []):
+                        etiqueta = 'Cliente' if index % 2 == 0 else 'Pegasus'
+                        report_file.write(f"- **{etiqueta}:** {mensaje}\n")
+                    report_file.write(f"\n**Cliente (Input):** {case['mensaje_entrante']}\n")
+                    report_file.write(f"**Pegasus (Respuesta Real):** {response or 'Sin respuesta'}\n\n")
+                    report_file.write(f"**Veredicto Detallado:** {reason or 'No se proporcionó razón.'}\n")
+                    report_file.write('---\n\n')
+
+                    if ok:
+                        passed += 1
+                        mission_passed += 1
+                    else:
+                        failed += 1
+                        mission_failed += 1
+
+                mission_summary[mission] = {
+                    'total': len(cases_by_mission[mission]),
+                    'passed': mission_passed,
+                    'failed': mission_failed,
+                }
+
+            report_file.write('## Resumen General:\n')
+            report_file.write(f'Total: {total} | ✅ Pasaron: {passed} | ❌ Fallaron: {failed}\n\n')
+            for mission, summary in mission_summary.items():
+                report_file.write(f"### {mission}\n")
+                report_file.write(f"- Total: {summary['total']}\n")
+                report_file.write(f"- ✅ Pasaron: {summary['passed']}\n")
+                report_file.write(f"- ❌ Fallaron: {summary['failed']}\n\n")
 
         print('\nResumen:')
         print(f'Total: {total} | ✅ Pasaron: {passed} | ❌ Fallaron: {failed}')

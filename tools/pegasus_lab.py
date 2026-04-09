@@ -1,5 +1,7 @@
 import os
 import sys
+import re
+import json
 import time
 from datetime import datetime
 from dotenv import load_dotenv
@@ -53,6 +55,8 @@ class AIResponseWorker(QThread):
                     inventory_rows=inventory_rows,
                     time_context=self.time_context,
                     custom_training=self.config.get('system_prompt', ''),
+                    current_state=self.config.get('current_state', 'CONSULTA'),
+                    bot_mission=self.config.get('bot_mission', 'Ventas'),
                 )
             else:
                 respuesta = self.ai.generate_response(
@@ -288,6 +292,16 @@ class PegasusLab(QWidget):
         input_row.addWidget(self.btn_send)
 
         interaction_layout.addLayout(input_row)
+
+        self.data_capture_box = QTextEdit()
+        self.data_capture_box.setReadOnly(True)
+        self.data_capture_box.setVisible(False)
+        self.data_capture_box.setStyleSheet(
+            "background-color: #0A2E0A; border: 1px solid #1F5A1F; color: #D4FFDF; padding: 10px;"
+        )
+        interaction_layout.addWidget(QLabel("Datos Capturados (JSON)"))
+        interaction_layout.addWidget(self.data_capture_box, stretch=2)
+
         self.tabs.addTab(interaction_tab, "Interacción")
 
         profiles_tab = QWidget()
@@ -318,6 +332,24 @@ class PegasusLab(QWidget):
         self.combo_roles.currentTextChanged.connect(self.select_role)
         self.combo_roles.setStyleSheet("color: #FFFFFF; background-color: #111111; border: 1px solid #222222; padding: 6px;")
         layout_selectores.addWidget(self.combo_roles, stretch=1)
+
+        label_mision = QLabel("Misión del Bot")
+        label_mision.setStyleSheet("font-size: 12px; color: #DDDDDD;")
+        layout_selectores.addWidget(label_mision)
+
+        self.combo_mission = QComboBox()
+        self.combo_mission.addItems(["Ventas", "Soporte"])
+        self.combo_mission.setStyleSheet("color: #FFFFFF; background-color: #111111; border: 1px solid #222222; padding: 6px;")
+        layout_selectores.addWidget(self.combo_mission, stretch=1)
+
+        label_estado = QLabel("Estado del Cliente")
+        label_estado.setStyleSheet("font-size: 12px; color: #DDDDDD;")
+        layout_selectores.addWidget(label_estado)
+
+        self.combo_state = QComboBox()
+        self.combo_state.addItems(["CONSULTA", "ESPERANDO_DATOS", "CERRADO_PENDIENTE_VALIDACION"])
+        self.combo_state.setStyleSheet("color: #FFFFFF; background-color: #111111; border: 1px solid #222222; padding: 6px;")
+        layout_selectores.addWidget(self.combo_state, stretch=1)
 
         self.btn_load_profile = QPushButton("Cargar Configuración")
         self.btn_load_profile.clicked.connect(self.aplicar_configuracion_prueba)
@@ -842,6 +874,8 @@ class PegasusLab(QWidget):
             'bot_role': bot_role,
             'business_profile': business_profile,
             'system_prompt': system_prompt,
+            'bot_mission': self.combo_mission.currentText() if hasattr(self, 'combo_mission') else 'Ventas',
+            'current_state': self.combo_state.currentText() if hasattr(self, 'combo_state') else 'CONSULTA',
         }
         self.worker = AIResponseWorker(
             self.ai,
@@ -858,6 +892,24 @@ class PegasusLab(QWidget):
         self._append_chat("Pegasus", respuesta)
         lower = respuesta.lower()
         should_trigger_handoff = self.last_message_was_image or "whatsapp" in lower or "wa.me" in lower or "api.whatsapp.com" in lower
+
+        data_match = re.search(r"<DATA>(.*?)</DATA>", respuesta, re.DOTALL | re.IGNORECASE)
+        if data_match:
+            raw_data = data_match.group(1).strip()
+            try:
+                parsed = json.loads(raw_data)
+                pretty = json.dumps(parsed, indent=2, ensure_ascii=False)
+                self.data_capture_box.setPlainText(pretty)
+                self.data_capture_box.setVisible(True)
+                self._append_log("[DATA] Bloque <DATA> detectado y mostrado en la consola de datos capturados.")
+            except Exception as exc:
+                self.data_capture_box.setPlainText(f"ERROR JSON: {exc}\n\n{raw_data}")
+                self.data_capture_box.setVisible(True)
+                self._append_log(f"[DATA] Bloque <DATA> detectado pero JSON inválido: {exc}")
+        else:
+            self.data_capture_box.clear()
+            self.data_capture_box.setVisible(False)
+
         if should_trigger_handoff:
             self._append_log("[ALERTA] Handoff detectado. Ejecutando modo manual + alerta de imagen/handoff.")
             self._play_alert_sound()

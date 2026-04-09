@@ -46,8 +46,7 @@ def get_active_groq_key_secure(cliente_id=None):
         cliente_id_str = str(cliente_id)
         response = supabase.rpc("obtener_llave_groq_segura", {"p_cliente_id": cliente_id_str}).execute()
         return _extract_rpc_result(response)
-    except Exception as e:
-        print(f"Error de seguridad: {e}")
+    except Exception:
         return None
 
 
@@ -62,12 +61,9 @@ def desactivar_llave_por_uso(key_string):
         key_string_value = str(key_string)
         response = supabase.rpc("desactivar_llave_por_uso", {"key_string": key_string_value}).execute()
         if getattr(response, 'error', None):
-            print(f"[FAILOVER] Error al desactivar llave: {response.error}")
             return False
-        print("[FAILOVER] La llave ha llegado a su límite y fue desactivada en la nube.")
         return True
-    except Exception as e:
-        print(f"[FAILOVER] Error de seguridad al desactivar llave: {e}")
+    except Exception:
         return False
 
 
@@ -98,8 +94,7 @@ def sincronizar_aplicacion(nombre_app="Bot_Instagram", version_app="1.0.0"):
             return retry.data[0].get("id")
 
         return None
-    except Exception as e:
-        print(f"Error sincronizando aplicación: {e}")
+    except Exception:
         retry = supabase.table("aplicaciones").select("id").eq("nombre", nombre_app).execute()
         if getattr(retry, 'data', None):
             return retry.data[0].get("id")
@@ -128,7 +123,6 @@ def registrar_nuevo_usuario(datos_usuario, hwid, app_id, expiracion_codigo):
             "email": datos_usuario.get("email"),
             "password": datos_usuario.get("pw")
         }
-        print(f"[DEBUG] Insertando cliente: {cliente_payload}")
         cliente_response = supabase.table("clientes").insert(cliente_payload).execute()
         if not getattr(cliente_response, 'data', None):
             raise Exception("No se pudo crear el cliente.")
@@ -271,7 +265,6 @@ def validar_licencia_cliente(cliente_id, app_id=None, hwid_actual=None):
     try:
         cliente_id = str(cliente_id)
         app_id = int(app_id) if app_id is not None else None
-        print(f"[DEBUG] validar_licencia_cliente cliente_id={cliente_id} app_id={app_id}")
         response = (
             supabase
             .table("licencias")
@@ -280,14 +273,12 @@ def validar_licencia_cliente(cliente_id, app_id=None, hwid_actual=None):
             .eq("app_id", app_id)
             .execute()
         )
-        print(f"[DEBUG] Supabase response type: {type(response)}")
         if getattr(response, 'error', None):
             return {
                 "valido": False,
                 "mensaje": f"Error de Supabase al validar licencia: {response.error}"
             }
         data = response.data if hasattr(response, "data") else None
-        print(f"[DEBUG] Supabase response data: {data}")
         if not data or len(data) == 0:
             return {
                 "valido": False,
@@ -387,8 +378,6 @@ def validar_licencia_cliente(cliente_id, app_id=None, hwid_actual=None):
             "datos": licencia
         }
     except Exception as e:
-        error_text = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
-        print(f"[ERROR] validar_licencia_cliente excepción:\n{error_text}")
         return {
             "valido": False,
             "mensaje": f"Error al validar la licencia: {repr(e)}"

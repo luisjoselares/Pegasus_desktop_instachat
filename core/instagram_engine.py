@@ -712,6 +712,8 @@ class InstagramService:
                                     'location': account_settings.get('location', '') or account_settings.get('ubicacion', ''),
                                     'website': account_settings.get('website', ''),
                                     'exchange_rate': account_settings.get('exchange_rate', ''),
+                                    'payment_methods': account_settings.get('payment_methods', []),
+                                    'info_eventos': account_settings.get('info_eventos', ''),
                                     'bot_name': bot_name,
                                     'whatsapp_contacto': whatsapp_contacto,
                                     'bot_role': account_settings.get('bot_role') or account_settings.get('context_type'),
@@ -724,6 +726,8 @@ class InstagramService:
                                     inventory_rows=inventory_rows,
                                     time_context=time_context,
                                     custom_training=self.account_system_prompt,
+                                    current_state=account_settings.get('current_state', 'CONSULTA'),
+                                    bot_mission=account_settings.get('bot_mission', 'Ventas'),
                                 )
                             else:
                                 respuesta = self.ai.generate_response(
@@ -738,6 +742,9 @@ class InstagramService:
                                     location=account_settings.get('location') or account_settings.get('ubicacion', ''),
                                     website=account_settings.get('website', ''),
                                     exchange_rate=account_settings.get('exchange_rate', ''),
+                                    currency_symbol=account_settings.get('currency_symbol', 'Bs'),
+                                    payment_methods=account_settings.get('payment_methods', []),
+                                    info_eventos=account_settings.get('info_eventos', ''),
                                 )
                         except RuntimeError as e:
                             self._ui_log(f"🚫 No se puede generar respuesta para hilo {thread.id}: {e}")

@@ -162,6 +162,105 @@ QPushButton#ForceActivateBtn:hover, QPushButton#EditAccountBtn:hover {
     font-weight: 900;
 }
 
+QFrame[class="KPICard"] {
+    background-color: #0D0D0D;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 18px;
+}
+
+QFrame[class="KPICard"] QLabel#KPIHeader {
+    color: #A8A8A8;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+QFrame[class="KPICard"] QLabel#KPIValue {
+    color: #00E5FF;
+    font-size: 28px;
+    font-weight: 900;
+}
+
+QLabel[class="StatusBadge"] {
+    background-color: rgba(0, 229, 255, 0.1);
+    color: #00E5FF;
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 12px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+QTableWidget[class="ModernTable"] {
+    gridline-color: transparent;
+    background-color: #0A0A0A;
+    border: none;
+}
+
+QTableWidget[class="ModernTable"] QHeaderView::section {
+    background-color: #111111;
+    border: none;
+    color: #FFFFFF;
+    padding: 10px;
+    font-weight: 800;
+}
+
+QTableWidget[class="ModernTable"] QTableWidget::item {
+    padding: 20px 16px;
+    color: #FFFFFF;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+QTableWidget[class="ModernTable"] QTableCornerButton::section {
+    background-color: #111111;
+    border: none;
+}
+
+QTableWidget[class="ModernTable"] QTableView::item:selected {
+    background-color: rgba(0, 229, 255, 0.12);
+    border: 1px solid #00E5FF;
+}
+
+QPushButton[class="ActionButton"] {
+    background-color: #111111;
+    border: 1px solid #222222;
+    border-radius: 18px;
+    color: #FFFFFF;
+    padding: 8px;
+    min-width: 28px;
+    min-height: 28px;
+}
+
+QPushButton[class="ActionButton"]:hover {
+    background-color: rgba(0, 229, 255, 0.15);
+    border-color: #00E5FF;
+}
+
+QPushButton[class="PersonalityCard"] {
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid #333333;
+    border-radius: 16px;
+    color: #FFFFFF;
+    padding: 18px;
+    text-align: left;
+}
+
+QPushButton[class="PersonalityCard"]::indicator {
+    width: 0px;
+}
+
+QPushButton[class="PersonalityCard"][selected="true"] {
+    border: 2px solid #00E5FF;
+    background-color: rgba(0, 229, 255, 0.08);
+    color: #FFFFFF;
+}
+
+QPushButton[class="PersonalityCard"]:hover {
+    border-color: #00E5FF;
+    background-color: rgba(0, 229, 255, 0.05);
+}
+
 /* Línea de Log Neón */
 #MinimalLog {
     color: #00FFCC;

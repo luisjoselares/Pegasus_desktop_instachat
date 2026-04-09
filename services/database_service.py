@@ -84,6 +84,59 @@ class LocalDBService:
                 )
             """)
 
+            # 4. Tabla de Estado de Conversación por usuario
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_states (
+                    ig_user_id TEXT PRIMARY KEY,
+                    current_state TEXT DEFAULT 'CONSULTA',
+                    temporal_context TEXT DEFAULT '{}',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 5. Tabla de Pedidos / Ventas Pendientes
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente_id TEXT,
+                    producto TEXT,
+                    monto REAL,
+                    referencia_pago TEXT,
+                    datos_envio TEXT,
+                    status TEXT DEFAULT 'PENDING_VALIDATION',
+                    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 6. Tabla de Citas / Appointments
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS appointments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente_id TEXT,
+                    nombre TEXT,
+                    telefono TEXT,
+                    fecha TEXT,
+                    hora TEXT,
+                    detalles TEXT,
+                    status TEXT DEFAULT 'PENDING_VALIDATION',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 7. Tabla de Leads
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS leads (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente_id TEXT,
+                    nombre TEXT,
+                    telefono TEXT,
+                    email TEXT,
+                    interes TEXT,
+                    status TEXT DEFAULT 'PENDING_VALIDATION',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # --- MIGRACIÓN DE COLUMNAS (Para no perder datos existentes) ---
             cursor = conn.execute("PRAGMA table_info(settings)")
             columns = [c[1] for c in cursor.fetchall()]
@@ -106,10 +159,13 @@ class LocalDBService:
                 "location": "TEXT DEFAULT ''",
                 "website": "TEXT DEFAULT ''",
                 "exchange_rate": "TEXT DEFAULT ''",
+                "payment_methods": "TEXT DEFAULT '[]'",
+                "info_eventos": "TEXT DEFAULT ''",
                 "proxy": "TEXT DEFAULT 'Auto'",
                 "schedule_start": "TEXT DEFAULT '08:00'",
                 "schedule_end": "TEXT DEFAULT '18:00'",
                 "context_type": "TEXT DEFAULT 'Vendedor de tienda'",
+                "bot_mission": "TEXT DEFAULT 'Ventas'",
                 "session_data": "TEXT DEFAULT ''",
                 "last_log": "TEXT DEFAULT 'Sistema listo'"
             }
@@ -161,6 +217,13 @@ class LocalDBService:
         normalized_role = self._normalize_role_key(raw_role)
         account['bot_role'] = normalized_role
         account['context_type'] = account.get('context_type') or raw_role or normalized_role
+
+        raw_payment_methods = account.get('payment_methods', '[]')
+        if isinstance(raw_payment_methods, str):
+            try:
+                account['payment_methods'] = json.loads(raw_payment_methods)
+            except Exception:
+                account['payment_methods'] = [item.strip() for item in raw_payment_methods.split(',') if item.strip()]
         return account
 
     def obtener_cuentas(self, cliente_id=None):
@@ -235,6 +298,33 @@ class LocalDBService:
                 for row in cursor.fetchall()
             ]
 
+    def obtener_ultimos_mensajes(self, thread_id, cliente_id=None, limit=10):
+        """Retorna los últimos mensajes de un hilo específico para usar en el contexto de la IA."""
+        if not thread_id:
+            return []
+        with self.get_connection() as conn:
+            if cliente_id is not None:
+                cursor = conn.execute(
+                    "SELECT username, mensaje_usuario, respuesta_ia, fecha FROM chat_history "
+                    "WHERE thread_id = ? AND cliente_id = ? ORDER BY fecha DESC LIMIT ?",
+                    (thread_id, cliente_id, limit)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT username, mensaje_usuario, respuesta_ia, fecha FROM chat_history "
+                    "WHERE thread_id = ? ORDER BY fecha DESC LIMIT ?",
+                    (thread_id, limit)
+                )
+            return [
+                {
+                    "username": row["username"],
+                    "mensaje_usuario": row["mensaje_usuario"],
+                    "respuesta_ia": row["respuesta_ia"],
+                    "fecha": row["fecha"],
+                }
+                for row in cursor.fetchall()
+            ]
+
     def obtener_chats_activos(self, cliente_id=None, limit=10):
         """Retorna los chats activos que el bot ha detectado, con su estado actual."""
         with self.get_connection() as conn:
@@ -284,8 +374,9 @@ class LocalDBService:
 
             columns = [
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
-                'bot_role', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
+                'bot_role', 'bot_mission', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
                 'country', 'language', 'currency_symbol',
+                'payment_methods', 'info_eventos',
                 'location', 'website', 'exchange_rate',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
             ]
@@ -295,9 +386,10 @@ class LocalDBService:
 
             values = [
                 data['user'], data['pass'], data.get('store_name', ''), data.get('description', ''),
-                data['prompt'], data.get('bot_role', ''), data.get('business_name', ''), data.get('business_data', ''),
+                data['prompt'], data.get('bot_role', ''), data.get('bot_mission', 'Ventas'), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
                 data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'),
+                json.dumps(data.get('payment_methods', [])), data.get('info_eventos', ''),
                 data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
                 data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
             ]
@@ -325,12 +417,15 @@ class LocalDBService:
         payload = dict(changes)
         if 'structured_identity' in payload and isinstance(payload['structured_identity'], dict):
             payload['structured_identity'] = json.dumps(payload['structured_identity'])
+        if 'payment_methods' in payload and isinstance(payload['payment_methods'], list):
+            payload['payment_methods'] = json.dumps(payload['payment_methods'])
 
         allowed = {
             'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
-            'description', 'bot_role', 'business_name', 'business_data',
+            'description', 'bot_role', 'bot_mission', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
             'country', 'language', 'currency_symbol',
+            'payment_methods', 'info_eventos',
             'location', 'website', 'exchange_rate',
             'context_type', 'schedule_start', 'schedule_end',
             'proxy', 'session_data', 'last_log'
@@ -364,6 +459,7 @@ class LocalDBService:
             if account is None:
                 return None
             account.setdefault('bot_role', '')
+            account.setdefault('bot_mission', 'Ventas')
             account.setdefault('business_name', '')
             account.setdefault('business_data', '')
             account.setdefault('operating_hours', '')
@@ -372,6 +468,8 @@ class LocalDBService:
             account.setdefault('country', 'Venezuela')
             account.setdefault('language', 'es')
             account.setdefault('currency_symbol', 'Bs')
+            account.setdefault('payment_methods', [])
+            account.setdefault('info_eventos', '')
             account.setdefault('location', '')
             account.setdefault('website', '')
             account.setdefault('exchange_rate', '')
@@ -380,6 +478,7 @@ class LocalDBService:
         cuentas = self.obtener_cuentas(cliente_id)
         for cuenta in cuentas:
             cuenta.setdefault('bot_role', '')
+            cuenta.setdefault('bot_mission', 'Ventas')
             cuenta.setdefault('business_name', '')
             cuenta.setdefault('business_data', '')
             cuenta.setdefault('operating_hours', '')
@@ -388,6 +487,8 @@ class LocalDBService:
             cuenta.setdefault('country', 'Venezuela')
             cuenta.setdefault('language', 'es')
             cuenta.setdefault('currency_symbol', 'Bs')
+            cuenta.setdefault('payment_methods', [])
+            cuenta.setdefault('info_eventos', '')
             cuenta.setdefault('location', '')
             cuenta.setdefault('website', '')
             cuenta.setdefault('exchange_rate', '')
@@ -521,6 +622,68 @@ class LocalDBService:
                 ).fetchone()
             account = dict(row) if row else None
             return self._normalize_account_role(account)
+
+    def get_user_state(self, ig_user_id):
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversation_states WHERE ig_user_id = ?",
+                (ig_user_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def update_user_state(self, ig_user_id, state, context):
+        temporal_context = json.dumps(context) if isinstance(context, (dict, list)) else str(context or '{}')
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO conversation_states (ig_user_id, current_state, temporal_context, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(ig_user_id) DO UPDATE SET current_state = excluded.current_state, temporal_context = excluded.temporal_context, updated_at = CURRENT_TIMESTAMP",
+                (ig_user_id, state or 'CONSULTA', temporal_context)
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def insert_order(self, cliente_id, producto, monto, ref, envio):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO orders (cliente_id, producto, monto, referencia_pago, datos_envio, status) VALUES (?, ?, ?, ?, ?, 'PENDING_VALIDATION')",
+                (cliente_id, producto, monto, ref, envio)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def insert_appointment(self, cliente_id, nombre, telefono, fecha, hora, detalles=''):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO appointments (cliente_id, nombre, telefono, fecha, hora, detalles, status) VALUES (?, ?, ?, ?, ?, ?, 'PENDING_VALIDATION')",
+                (cliente_id, nombre, telefono, fecha, hora, detalles)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def insert_lead(self, cliente_id, nombre, telefono, email, interes=''):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO leads (cliente_id, nombre, telefono, email, interes, status) VALUES (?, ?, ?, ?, ?, 'PENDING_VALIDATION')",
+                (cliente_id, nombre, telefono, email, interes)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_pending_orders(self):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM orders WHERE status = 'PENDING_VALIDATION' ORDER BY fecha ASC"
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def update_order_status(self, order_id, status):
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE orders SET status = ? WHERE id = ?",
+                (status, order_id)
+            )
+            conn.commit()
+            return cursor.rowcount
 
     def get_thread_status(self, thread_id, cliente_id=None):
         with self.get_connection() as conn:

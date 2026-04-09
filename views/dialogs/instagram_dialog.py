@@ -16,11 +16,16 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
     QWidget,
     QFileDialog,
+    QScrollArea,
     QGraphicsOpacityEffect,
+    QGraphicsDropShadowEffect,
+    QSizePolicy,
     QFrame,
     QInputDialog,
+    QGridLayout,
+    QLayout,
 )
-from PyQt6.QtGui import QTransform
+from PyQt6.QtGui import QTransform, QColor
 from PyQt6.QtCore import Qt, QTime, QThread, pyqtSignal, QTimer, QPropertyAnimation
 from core.ai_engine import AIService
 from services.instagram_service import InstagramService
@@ -77,8 +82,6 @@ class AddAccountDialog(QDialog):
         self.is_edit_mode = bool(account_data)
         self.account_id = self.account_data.get('id') if self.is_edit_mode else None
         self.setWindowTitle("Configuración de Agente Pegasus" if not self.is_edit_mode else "Configuración de Cuenta")
-        self.resize(480, 580)
-        self.setMinimumSize(450, 550)
         self.setObjectName("ModernDialog")
 
         self.insta_service = InstagramService()
@@ -92,11 +95,19 @@ class AddAccountDialog(QDialog):
         self.inventory_headers = []
         self.inventory_rows = 0
         self.hidden_prompt = ""
+        self.config_country = "Venezuela"
+        self.config_language = "es"
+        self.config_exchange = "1 USD = 36.5 Bs"
+        self.config_payments = ""
+        self.config_faq = ""
         self.digested_context_data = {}
         self.ai_service = AIService()
         self.setStyleSheet("""
-            QDialog, QWidget {
+            QDialog#ModernDialog {
                 background-color: #080808;
+            }
+            *:focus {
+                outline: none;
             }
             QLabel#StepTitle {
                 font-size: 24px;
@@ -121,25 +132,27 @@ class AddAccountDialog(QDialog):
             }
             QLineEdit:focus, QTextEdit:focus {
                 background-color: rgba(0, 229, 255, 0.05);
-                border-bottom: 2px solid #00E5FF;
+                border-bottom: 1px solid #00E5FF;
             }
-            QPushButton#GhostCard {
-                background-color: transparent;
-                border: 1px solid #333333;
-                border-radius: 8px;
-                color: #A0A0A0;
-                padding: 15px;
-                text-align: left;
-            }
-            QPushButton#GhostCard:hover {
-                border-color: #00E5FF;
+            QLabel {
                 color: #FFFFFF;
+            }
+            QPushButton#MissionChip {
+                background-color: rgba(255, 255, 255, 0.03);
+                border: 1px solid #333333;
+                border-radius: 12px;
+                color: #A0A0A0;
+                padding: 10px 15px;
+                font-size: 13px;
+            }
+            QPushButton#MissionChip:hover {
+                border: 1px solid #00E5FF;
                 background-color: rgba(0, 229, 255, 0.05);
             }
-            QPushButton#GhostCard[selected="true"] {
-                border: 2px solid #00E5FF;
+            QPushButton#MissionChip[selected="true"] {
+                border: 1px solid #00E5FF;
+                background-color: rgba(0, 229, 255, 0.1);
                 color: #FFFFFF;
-                font-weight: bold;
             }
             QPushButton#PrimaryBtn {
                 background-color: #00E5FF;
@@ -193,8 +206,27 @@ class AddAccountDialog(QDialog):
             }
         """)
 
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(30, 30, 30, 30)
+        self.main_layout = QHBoxLayout(self)
+        self.main_layout.setContentsMargins(15, 15, 15, 15)
+        self.main_layout.setSpacing(18)
+        # Esto es la magia del Shrink-Wrap: La ventana se ajustará al panel
+        self.main_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
+
+        self.wizard_container = QFrame()
+        self.wizard_container.setFixedSize(480, 580)
+        self.wizard_container.setObjectName("WizardContainer")
+        self.wizard_container.setStyleSheet(
+            "QFrame#WizardContainer{background-color:#0B0B0B; border-radius:24px;}"
+        )
+
+        wizard_shadow = QGraphicsDropShadowEffect(self.wizard_container)
+        wizard_shadow.setBlurRadius(30)
+        wizard_shadow.setOffset(0, 12)
+        wizard_shadow.setColor(QColor(0, 0, 0, 200))
+        self.wizard_container.setGraphicsEffect(wizard_shadow)
+
+        self.layout = QVBoxLayout(self.wizard_container)
+        self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(0)
 
         self.stacked = QStackedWidget()
@@ -204,6 +236,10 @@ class AddAccountDialog(QDialog):
         self.page4 = QWidget()
         self.page5 = QWidget()
         self.page6 = QWidget()
+
+        for page in [self.page1, self.page2, self.page3, self.page4, self.page5, self.page6]:
+            page.setStyleSheet("background: transparent;")
+        self.stacked.setStyleSheet("background: transparent;")
 
         self.schedule_warning = QLabel("")
 
@@ -244,8 +280,13 @@ class AddAccountDialog(QDialog):
         footer_layout.addWidget(self.footer_next)
         self.layout.addWidget(self.footer)
 
+        self.main_layout.addWidget(self.wizard_container, 1)
+        self._build_side_panel()
+
         self.on_page_changed(self.stacked.currentIndex())
         self._create_loading_overlay()
+        self._create_side_panel_animation()
+        self.main_layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         self.update_role_logic()
 
         if self.is_edit_mode:
@@ -279,6 +320,352 @@ class AddAccountDialog(QDialog):
         self.spinner_timer.setInterval(120)
         self.spinner_angle = 0
 
+    def _build_side_panel(self):
+        self.side_panel_container = QFrame()
+        self.side_panel_container.setObjectName("SidePanelContainer")
+        self.side_panel_container.setFixedWidth(0)
+        self.side_panel_container.setMaximumWidth(300)
+        self.side_panel_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.side_panel_container.setStyleSheet(
+            "QFrame#SidePanelContainer{background-color:#101010; border-radius:20px;}"
+        )
+
+        panel_shadow = QGraphicsDropShadowEffect(self.side_panel_container)
+        panel_shadow.setBlurRadius(16)
+        panel_shadow.setOffset(0, 8)
+        panel_shadow.setColor(QColor(0, 0, 0, 120))
+        self.side_panel_container.setGraphicsEffect(panel_shadow)
+
+        side_panel_layout = QVBoxLayout(self.side_panel_container)
+        side_panel_layout.setContentsMargins(14, 14, 14, 14)
+        side_panel_layout.setSpacing(0)
+
+        self.side_panel_stack = QStackedWidget()
+
+        self.side_panel_scroll = QScrollArea()
+        self.side_panel_scroll.setWidgetResizable(True)
+        self.side_panel_scroll.setStyleSheet(
+            "QScrollArea{background: transparent; border: none;}"
+            "QScrollBar:vertical{width: 8px; background: transparent; margin: 0 0 0 0;}"
+            "QScrollBar::handle:vertical{background: rgba(255,255,255,0.15); border-radius: 4px;}"
+            "QScrollBar::handle:vertical:hover{background: rgba(255,255,255,0.25); }"
+            "QScrollBar::add-line, QScrollBar::sub-line{height: 0;}"
+            "QScrollBar::add-page, QScrollBar::sub-page{background: transparent;}"
+        )
+
+        self.side_panel_content = QWidget()
+        self.side_panel_content.setStyleSheet("background: transparent;")
+        content_layout = QVBoxLayout(self.side_panel_content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(self.side_panel_stack)
+        content_layout.addStretch()
+
+        self.side_panel_scroll.setWidget(self.side_panel_content)
+        side_panel_layout.addWidget(self.side_panel_scroll)
+
+        self.side_panel_stack.addWidget(self._create_finance_panel_page())
+        self.side_panel_stack.addWidget(self._create_catalog_panel_page())
+        self.side_panel_stack.addWidget(self._create_attention_panel_page())
+        self.side_panel_stack.addWidget(self._create_faq_panel_page())
+
+        self.side_panel_container.setVisible(False)
+        self.main_layout.addWidget(self.side_panel_container)
+
+    def _create_side_panel_page_header(self, title, description):
+        header_frame = QFrame()
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
+
+        close_button = QPushButton(qta.icon('fa5s.arrow-left', color='#00E5FF'), "Cerrar")
+        close_button.setObjectName("FlatBtn")
+        close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_button.clicked.connect(lambda: self.toggle_side_panel(False))
+        header_layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        label = QLabel(title)
+        label.setObjectName("StepTitle")
+        header_layout.addWidget(label)
+
+        subtitle = QLabel(description)
+        subtitle.setWordWrap(True)
+        subtitle.setObjectName("StepSubtitle")
+        header_layout.addWidget(subtitle)
+
+        return header_frame
+
+    def _create_finance_panel_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._create_side_panel_page_header(
+            "Finanzas", "Ajusta país, idioma, tasa de cambio y métodos de pago."))
+
+        self.side_country_combo = QComboBox()
+        self.side_country_combo.addItems(["Venezuela", "México", "Colombia", "Argentina", "Chile", "Perú"])
+        self.side_country_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.side_country_combo.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        layout.addWidget(QLabel("País de operación"))
+        layout.addWidget(self.side_country_combo)
+
+        self.side_language_input = QLineEdit()
+        self.side_language_input.setPlaceholderText("Ej: es")
+        self.side_language_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        layout.addWidget(QLabel("Idioma principal"))
+        layout.addWidget(self.side_language_input)
+
+        self.side_exchange_input = QLineEdit()
+        self.side_exchange_input.setPlaceholderText("Ej: 1 USD = 3.600.000 Bs")
+        self.side_exchange_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        layout.addWidget(QLabel("Tasa de cambio"))
+        layout.addWidget(self.side_exchange_input)
+
+        self.side_payment_input = QTextEdit()
+        self.side_payment_input.setPlaceholderText("Ej: Pago Móvil, Zelle, Binance, Efectivo")
+        self.side_payment_input.setFixedHeight(120)
+        self.side_payment_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        layout.addWidget(QLabel("Métodos de Pago"))
+        layout.addWidget(self.side_payment_input)
+
+        btn_save = QPushButton("Listo")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.clicked.connect(lambda: self._save_finance_panel())
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addStretch()
+
+        return page
+
+    def _create_faq_panel_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._create_side_panel_page_header(
+            "FAQ / Lives", "Pega aquí todo el contenido extra que el asistente debe conocer."))
+
+        self.side_faq_text = QTextEdit()
+        self.side_faq_text.setPlaceholderText("Ej: Lives los viernes, promociones especiales, preguntas frecuentes, detalles de eventos...")
+        self.side_faq_text.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        self.side_faq_text.setMinimumHeight(260)
+        layout.addWidget(self.side_faq_text)
+
+        btn_save = QPushButton("Listo")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.clicked.connect(lambda: self._save_faq_panel())
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addStretch()
+
+        return page
+
+    def _create_catalog_panel_page(self):
+        page = QFrame()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._create_side_panel_page_header(
+            "Catálogo", "Revisa y gestiona la información del inventario cargado."))
+
+        self.side_catalog_info = QLabel()
+        self.side_catalog_info.setStyleSheet("color: #A0A0A0; font-size: 13px;")
+        self.side_catalog_info.setWordWrap(True)
+        layout.addWidget(self.side_catalog_info)
+        self._refresh_side_catalog_info()
+
+        btn_close = QPushButton("Cerrar")
+        btn_close.setObjectName("PrimaryBtn")
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.clicked.connect(lambda: self.toggle_side_panel(False))
+        layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addStretch()
+
+        return page
+
+    def _create_attention_panel_page(self):
+        page = QFrame()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._create_side_panel_page_header(
+            "Atención", "Ajusta el horario de atención y el estado activo."))
+
+        self.side_attention_info = QLabel()
+        self.side_attention_info.setStyleSheet("color: #A0A0A0; font-size: 13px;")
+        self.side_attention_info.setWordWrap(True)
+        layout.addWidget(self.side_attention_info)
+
+        time_frame = QFrame()
+        time_frame.setStyleSheet("background-color: rgba(255,255,255,0.03); border: 1px solid #222222; border-radius: 12px;")
+        time_layout = QHBoxLayout(time_frame)
+        time_layout.setContentsMargins(12, 12, 12, 12)
+        time_layout.setSpacing(12)
+
+        self.start_time = QTimeEdit()
+        self.start_time.setDisplayFormat("HH:mm")
+        self.start_time.setTime(QTime(8, 0))
+        self.start_time.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        time_layout.addWidget(self.start_time)
+
+        self.end_time = QTimeEdit()
+        self.end_time.setDisplayFormat("HH:mm")
+        self.end_time.setTime(QTime(20, 0))
+        self.end_time.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.end_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        time_layout.addWidget(self.end_time)
+
+        layout.addWidget(time_frame)
+        self._refresh_side_attention_info()
+
+        btn_save = QPushButton("Listo")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.clicked.connect(self._save_attention_panel)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addStretch()
+
+        return page
+
+    def _refresh_side_catalog_info(self):
+        csv_name = os.path.basename(self.csv_path) if self.csv_path else 'Sin catálogo cargado'
+        self.side_catalog_info.setText(f"Archivo actual: {csv_name}")
+
+    def _refresh_side_attention_info(self):
+        if hasattr(self, 'start_time') and hasattr(self, 'end_time'):
+            self.side_attention_info.setText(f"Horario actual: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
+        else:
+            self.side_attention_info.setText("Activo 24/7")
+
+    def _save_finance_panel(self):
+        self.config_country = self.side_country_combo.currentText()
+        self.config_language = self.side_language_input.text().strip() or self.config_language
+        self.config_exchange = self.side_exchange_input.text().strip() or self.config_exchange
+        self.config_payments = self.side_payment_input.toPlainText().strip()
+        self.side_payment_text = self.config_payments
+        self._update_status_cards()
+        self.toggle_side_panel(False)
+
+    def _save_faq_panel(self):
+        self.config_faq = self.side_faq_text.toPlainText().strip()
+        self.side_faq_text.setPlainText(self.config_faq)
+        self._update_status_cards()
+        self.toggle_side_panel(False)
+
+    def _save_attention_panel(self):
+        self._refresh_side_attention_info()
+        self._update_status_cards()
+        self.toggle_side_panel(False)
+
+    def _create_status_card(self, title, status_label, button_text, callback):
+        frame = QFrame()
+        frame.setStyleSheet(
+            "background-color: rgba(255, 255, 255, 0.03); border: 1px solid #222222; border-radius: 18px;"
+        )
+        frame.setMinimumHeight(70)
+        card_layout = QHBoxLayout(frame)
+        card_layout.setContentsMargins(14, 8, 14, 8)
+        card_layout.setSpacing(12)
+
+        text_layout = QVBoxLayout()
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #FFFFFF; background: transparent; font-weight: bold; font-size: 14px;")
+        text_layout.addWidget(title_label)
+
+        status_label.setStyleSheet("color: #A0A0A0; background: transparent; font-size: 13px;")
+        status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        status_label.setWordWrap(False)
+        text_layout.addWidget(status_label)
+
+        card_layout.addLayout(text_layout)
+        card_layout.addStretch()
+
+        button = QPushButton(button_text)
+        button.setObjectName("PrimaryBtn")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(callback)
+        button.setFixedWidth(110)
+        card_layout.addWidget(button)
+
+        return frame
+
+    def _open_side_panel_section(self, section):
+        mapping = {
+            "Finanzas": 0,
+            "Catálogo": 1,
+            "Atención": 2,
+            "Conocimiento": 3,
+        }
+        if section == "Finanzas":
+            self.side_country_combo.setCurrentText(self.config_country)
+            self.side_language_input.setText(self.config_language)
+            self.side_exchange_input.setText(self.config_exchange)
+            self.side_payment_input.setPlainText(self.config_payments)
+        elif section == "Conocimiento":
+            self.side_faq_text.setPlainText(self.config_faq)
+        elif section == "Catálogo":
+            self._refresh_side_catalog_info()
+        elif section == "Atención":
+            if hasattr(self, 'start_time') and hasattr(self, 'side_attention_info'):
+                self.side_attention_info.setText(f"Horario actual: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
+
+        index = mapping.get(section, 0)
+        self.side_panel_stack.setCurrentIndex(index)
+        self.toggle_side_panel(True)
+
+    def _truncate_status_text(self, text, max_length=48):
+        if len(text) <= max_length:
+            return text
+        return text[:max_length - 3].rstrip() + '...'
+
+    def _update_status_cards(self):
+        if hasattr(self, 'finance_status_label'):
+            self.finance_status_label.setText(
+                self._truncate_status_text(
+                    f"{self.config_country} - {self.config_language} - Tasa: {self.config_exchange}",
+                    max_length=52
+                )
+            )
+
+        csv_name = os.path.basename(self.csv_path) if self.csv_path else 'Sin catálogo cargado'
+        if hasattr(self, 'catalog_status_label'):
+            self.catalog_status_label.setText(self._truncate_status_text(f"{csv_name}", max_length=52))
+
+        if hasattr(self, 'start_time') and hasattr(self, 'end_time'):
+            start = self.start_time.time().toString('HH:mm')
+            end = self.end_time.time().toString('HH:mm')
+            if hasattr(self, 'attention_status_label'):
+                self.attention_status_label.setText(self._truncate_status_text(f"Horario: {start} - {end}", max_length=52))
+        else:
+            if hasattr(self, 'attention_status_label'):
+                self.attention_status_label.setText("Activo 24/7")
+
+        rules = len([line for line in self.config_faq.splitlines() if line.strip()])
+        if hasattr(self, 'faq_status_label'):
+            self.faq_status_label.setText(self._truncate_status_text(f"{rules} reglas configuradas", max_length=52))
+
+    def _create_side_panel_animation(self):
+        self.side_panel_animation = QPropertyAnimation(self.side_panel_container, b"fixedWidth", self)
+        self.side_panel_animation.setDuration(260)
+        self.side_panel_animation.finished.connect(self._on_side_panel_animation_finished)
+
+    def _on_side_panel_animation_finished(self):
+        if self.side_panel_container.width() == 0:
+            self.side_panel_container.setVisible(False)
+
+    def toggle_side_panel(self, show=True):
+        self.side_panel_container.setVisible(True)
+        self.side_panel_animation.stop()
+        self.side_panel_animation.setStartValue(self.side_panel_container.width())
+        self.side_panel_animation.setEndValue(300 if show else 0)
+        self.side_panel_animation.start()
+
     def _rotate_spinner(self):
         self.spinner_angle = (self.spinner_angle + 12) % 360
         transform = QTransform().rotate(self.spinner_angle)
@@ -294,6 +681,7 @@ class AddAccountDialog(QDialog):
         layout = QVBoxLayout(self.page1)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         title = QLabel("Login de Instagram")
         title.setObjectName("StepTitle")
@@ -317,13 +705,12 @@ class AddAccountDialog(QDialog):
         self.page1_status.setStyleSheet("color: #00E5FF;")
         layout.addWidget(self.page1_status)
 
-        layout.addStretch()
-
         self.btn_validate = QPushButton(qta.icon('fa5s.check', color='#00E5FF'), "VALIDAR Y CONTINUAR")
         self.btn_validate.setObjectName("PrimaryBtn")
         self.btn_validate.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_validate.clicked.connect(self.validate_credentials)
         layout.addWidget(self.btn_validate)
+        layout.addStretch()
 
         if self.is_edit_mode:
             self.btn_validate.setVisible(False)
@@ -333,6 +720,7 @@ class AddAccountDialog(QDialog):
         layout = QVBoxLayout(self.page2)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         title = QLabel("Identidad de la tienda")
         title.setObjectName("StepTitle")
@@ -357,19 +745,65 @@ class AddAccountDialog(QDialog):
         self.assistant_name_input.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); color: #FFFFFF; font-size: 14px; padding: 10px 10px; border: none; border-bottom: 1px solid #333333; border-radius: 4px 4px 0 0;")
         layout.addWidget(self.assistant_name_input)
 
+        self.business_type_label = QLabel("Tipo de negocio")
+        self.business_type_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.business_type_label)
+        self.business_type_combo = QComboBox()
+        self.business_type_combo.setObjectName("BusinessTypeCombo")
+        self.business_type_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.business_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.business_type_combo.setMinimumHeight(42)
+        self.business_type_combo.addItems(["Comercio", "Profesional", "Reservas", "Marca Personal", "Corporativo"])
+        self.business_type_combo.setStyleSheet(
+            "QComboBox { background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px 12px 10px 10px; }"
+            "QComboBox::drop-down { border: none; }"
+            "QComboBox:focus { outline: none; }"
+        )
+        layout.addWidget(self.business_type_combo)
+
+        mission_label = QLabel("Misión del bot")
+        mission_label.setProperty("class", "QuestionLabel")
+        mission_label.setStyleSheet("margin-top: 4px; margin-bottom: 4px; color: #8ea1b8; font-size: 12px;")
+        layout.addWidget(mission_label)
+
+        self.mission_buttons = []
+        self.mission_selected = "Ventas"
+        mission_layout = QGridLayout()
+        mission_layout.setSpacing(10)
+
+        mission_names = ["Ventas", "Agendador", "Captación", "Soporte"]
+        for index, name in enumerate(mission_names):
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.setObjectName("MissionChip")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda checked, key=name: self.select_mission_card(key))
+            button.setMinimumHeight(38)
+            self.mission_buttons.append(button)
+            row = index // 2
+            col = index % 2
+            mission_layout.addWidget(button, row, col)
+
+        layout.addLayout(mission_layout)
+
+        self.select_mission_card(self.mission_selected)
+
         self.description_input = QTextEdit()
         self.description_input.setPlaceholderText("Propuesta de valor de tu tienda")
-        self.description_input.setMinimumHeight(140)
+        self.description_input.setMinimumHeight(100)
+        self.description_input.setMaximumHeight(140)
         layout.addWidget(self.description_input)
 
         self.page2_status = QLabel("Estos campos alimentarán la personalidad del asistente.")
         self.page2_status.setStyleSheet("color: #a5b1c2;")
         layout.addWidget(self.page2_status)
+        layout.addStretch()
 
     def _build_page3(self):
         layout = QVBoxLayout(self.page3)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         title = QLabel("Personalidad del asistente")
         title.setObjectName("StepTitle")
@@ -380,37 +814,24 @@ class AddAccountDialog(QDialog):
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
-        cards = QHBoxLayout()
-        cards.setSpacing(12)
+        personality_layout = QVBoxLayout()
+        personality_layout.setSpacing(10)
 
         self.personality_buttons = []
         self.personality_selected = "Vendedor Quirúrgico"
 
-        def add_card(name, subtitle):
-            card = QPushButton(name)
-            card.setCheckable(True)
-            card.setObjectName("GhostCard")
-            card.setCursor(Qt.CursorShape.PointingHandCursor)
-            card.setToolTip(subtitle)
-            card.clicked.connect(lambda checked, key=name: self.select_personality_card(key))
-            card.setMinimumHeight(55)
-            card.setMaximumWidth(180)
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(10, 10, 10, 10)
-            card_layout.setSpacing(4)
-            subtitle_label = QLabel(subtitle)
-            subtitle_label.setWordWrap(True)
-            subtitle_label.setStyleSheet("color: #a5b1c2; font-size: 11px;")
-            card_layout.addWidget(QLabel(name))
-            card_layout.addWidget(subtitle_label)
-            self.personality_buttons.append(card)
-            cards.addWidget(card)
+        personality_names = ["Vendedor Quirúrgico", "Asistente Creativo", "Soporte Profesional"]
+        for name in personality_names:
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.setObjectName("MissionChip")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda checked, key=name: self.select_personality_card(key))
+            button.setMinimumHeight(38)
+            self.personality_buttons.append(button)
+            personality_layout.addWidget(button)
 
-        add_card("Vendedor Quirúrgico", "Enfocado en ventas")
-        add_card("Asistente Creativo", "Cercano y dinámico")
-        add_card("Soporte Profesional", "Serio y preciso")
-
-        layout.addLayout(cards)
+        layout.addLayout(personality_layout)
 
         self.personality_description = QLabel(
             "Escoge un estilo de comunicación y el asistente ajustará su tono al cliente."
@@ -419,9 +840,10 @@ class AddAccountDialog(QDialog):
         self.personality_description.setStyleSheet("color: #FFFFFF; background-color: transparent; padding: 12px 0;")
         layout.addWidget(self.personality_description)
 
-        self.page3_status = QLabel("Elige la personalidad que mejor represente tu marca.")
+        self.page3_status = QLabel("")
         self.page3_status.setStyleSheet("color: #a5b1c2;")
         layout.addWidget(self.page3_status)
+        layout.addStretch()
 
         self.select_personality_card(self.personality_selected)
 
@@ -429,87 +851,52 @@ class AddAccountDialog(QDialog):
         layout = QVBoxLayout(self.page4)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.page4.setMaximumHeight(600)
 
         title = QLabel("Operaciones")
         title.setObjectName("StepTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Configura el horario de atención y sube tu inventario para respuestas mejores.")
+        subtitle = QLabel("Revisa los estados clave y abre el panel lateral para ajustar cada área.")
         subtitle.setObjectName("StepSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
-        self.start_time = QTimeEdit(QTime(8, 0))
-        self.start_time.setDisplayFormat("HH:mm")
-        self.end_time = QTimeEdit(QTime(20, 0))
-        self.end_time.setDisplayFormat("HH:mm")
-        self.start_time.timeChanged.connect(self.update_role_logic)
-        self.end_time.timeChanged.connect(self.update_role_logic)
+        self.finance_status_label = QLabel("")
+        self.catalog_status_label = QLabel("")
+        self.attention_status_label = QLabel("")
+        self.faq_status_label = QLabel("")
 
-        time_row = QHBoxLayout()
-        time_row.setSpacing(12)
-        time_row.addWidget(self.start_time)
-        time_row.addWidget(QLabel("-"))
-        time_row.addWidget(self.end_time)
-        layout.addLayout(time_row)
+        layout.addWidget(self._create_status_card(
+            "Finanzas y Moneda",
+            self.finance_status_label,
+            "Editar",
+            lambda: self._open_side_panel_section("Finanzas")
+        ))
+        layout.addWidget(self._create_status_card(
+            "Catálogo e Inventario",
+            self.catalog_status_label,
+            "Gestionar",
+            lambda: self._open_side_panel_section("Catálogo")
+        ))
+        layout.addWidget(self._create_status_card(
+            "Atención y Horarios",
+            self.attention_status_label,
+            "Editar",
+            lambda: self._open_side_panel_section("Atención")
+        ))
+        layout.addWidget(self._create_status_card(
+            "Conocimiento Extra",
+            self.faq_status_label,
+            "Editar",
+            lambda: self._open_side_panel_section("Conocimiento")
+        ))
 
-        self.schedule_warning = QLabel("")
-        self.schedule_warning.setStyleSheet("color: #26de81; font-size: 12px;")
-        layout.addWidget(self.schedule_warning)
-
-        self.btn_upload_catalog = QPushButton("Subir Catálogo (Excel/CSV)")
-        self.btn_upload_catalog.setObjectName("PrimaryBtn")
-        self.btn_upload_catalog.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_upload_catalog.clicked.connect(self.browse_inventory_file)
-        layout.addWidget(self.btn_upload_catalog)
-
-        self.catalog_status = QLabel("Ningún catálogo cargado todavía.")
-        self.catalog_status.setObjectName("CatalogStatus")
-        self.catalog_status.setStyleSheet("color: #00E5FF;")
-        layout.addWidget(self.catalog_status)
-
-        layout.addWidget(QLabel("Tipo de Negocio"))
-        self.business_type_combo = QComboBox()
-        self.business_type_combo.addItems(["Retail", "Profesional", "Booking", "Marca Personal", "Corporativo"])
-        self.business_type_combo.setCurrentText("Retail")
-        self.business_type_combo.setCursor(Qt.CursorShape.PointingHandCursor)
-        layout.addWidget(self.business_type_combo)
-
-        layout.addWidget(QLabel("Contexto Masticado"))
-        self.aspect_frame = QFrame()
-        self.aspect_frame.setFrameShape(QFrame.Shape.StyledPanel)
-        self.aspect_frame.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); border: 1px solid #222222; border-radius: 14px;")
-        self.aspect_layout = QVBoxLayout(self.aspect_frame)
-        self.aspect_layout.setContentsMargins(12, 12, 12, 12)
-        self.aspect_layout.setSpacing(10)
-        layout.addWidget(self.aspect_frame)
-
-        self.btn_edit_details = QPushButton("Editar Detalles")
-        self.btn_edit_details.setObjectName("FlatBtn")
-        self.btn_edit_details.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_edit_details.clicked.connect(self._edit_details)
-        layout.addWidget(self.btn_edit_details)
-
-        layout.addWidget(QLabel("Instrucciones de Personalidad"))
-        self.custom_training_input = QTextEdit()
-        self.custom_training_input.setPlaceholderText("Añade aquí instrucciones de estilo, tono o personalidad...")
-        self.custom_training_input.setMinimumHeight(120)
-        layout.addWidget(self.custom_training_input)
-
-        chips_row = QHBoxLayout()
-        chips_row.setSpacing(8)
-        for chip_text in ["Hablar de 'tú'", "Muy formal", "Usar emojis", "Enfoque en ofertas"]:
-            btn = QPushButton(chip_text)
-            btn.setObjectName("FlatBtn")
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.clicked.connect(lambda checked, text=chip_text: self._apply_chip(text))
-            chips_row.addWidget(btn)
-        layout.addLayout(chips_row)
-
-        self.context_note = QLabel("Pegasus ya ha configurado los protocolos de seguridad y geolocalización de forma automática.")
-        self.context_note.setStyleSheet("color: #777777; font-size: 12px;")
-        self.context_note.setWordWrap(True)
-        layout.addWidget(self.context_note)
+        self.card_note = QLabel("Usa estas tarjetas para abrir el panel lateral y ajustar cada sección sin saturar la vista.")
+        self.card_note.setStyleSheet("color: #777777; font-size: 12px;")
+        self.card_note.setWordWrap(True)
+        layout.addWidget(self.card_note)
 
         layout.addStretch()
 
@@ -557,12 +944,13 @@ class AddAccountDialog(QDialog):
         layout = QVBoxLayout(self.page5)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("Reglas del Juego.")
+        title = QLabel("Configuración fija de IA")
         title.setObjectName("StepTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Dale a tu asistente la información clave para cerrar ventas.")
+        subtitle = QLabel("Define la información clave que el asistente siempre debe conocer para evitar respuestas como 'no sé'.")
         subtitle.setObjectName("StepSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
@@ -591,37 +979,45 @@ class AddAccountDialog(QDialog):
         self.txt_website.setPlaceholderText("Ej: https://miempresa.com")
         layout.addWidget(self.txt_website)
 
+        self.location_frame = QFrame()
+        self.location_frame.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); border: 1px solid #222222; border-radius: 16px;")
+        location_layout = QVBoxLayout(self.location_frame)
+        location_layout.setContentsMargins(16, 16, 16, 16)
+        location_layout.setSpacing(14)
+
         self.txt_country_label = QLabel("¿En qué país opera tu negocio?")
         self.txt_country_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.txt_country_label)
-
+        location_layout.addWidget(self.txt_country_label)
         self.txt_country = QLineEdit()
         self.txt_country.setPlaceholderText("Ej: Venezuela")
-        layout.addWidget(self.txt_country)
+        self.txt_country.addAction(qta.icon('fa5s.globe', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_country)
 
         self.txt_language_label = QLabel("¿Cuál es el idioma principal de atención?")
         self.txt_language_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.txt_language_label)
-
+        location_layout.addWidget(self.txt_language_label)
         self.txt_language = QLineEdit()
         self.txt_language.setPlaceholderText("Ej: es")
-        layout.addWidget(self.txt_language)
+        self.txt_language.addAction(qta.icon('fa5s.language', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_language)
 
         self.txt_currency_symbol_label = QLabel("¿Cuál es el símbolo de tu moneda?")
         self.txt_currency_symbol_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.txt_currency_symbol_label)
-
+        location_layout.addWidget(self.txt_currency_symbol_label)
         self.txt_currency_symbol = QLineEdit()
         self.txt_currency_symbol.setPlaceholderText("Ej: Bs")
-        layout.addWidget(self.txt_currency_symbol)
+        self.txt_currency_symbol.addAction(qta.icon('fa5s.money-bill-wave', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_currency_symbol)
 
         self.txt_tasa_cambio_label = QLabel("¿Cuál es tu tasa de cambio preferida?")
         self.txt_tasa_cambio_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.txt_tasa_cambio_label)
-
+        location_layout.addWidget(self.txt_tasa_cambio_label)
         self.txt_tasa_cambio = QLineEdit()
         self.txt_tasa_cambio.setPlaceholderText("Ej: 1 USD = 3.600.000 Bs")
-        layout.addWidget(self.txt_tasa_cambio)
+        self.txt_tasa_cambio.addAction(qta.icon('fa5s.exchange-alt', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_tasa_cambio)
+
+        layout.addWidget(self.location_frame)
 
         self.txt_envios_label = QLabel("¿Cómo manejas los envíos o el delivery?")
         self.txt_envios_label.setProperty("class", "QuestionLabel")
@@ -651,6 +1047,25 @@ class AddAccountDialog(QDialog):
 
         layout.addLayout(payment_row)
 
+        self.txt_info_eventos_label = QLabel("¿Tienes Lives, eventos o promociones especiales?")
+        self.txt_info_eventos_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.txt_info_eventos_label)
+
+        self.txt_info_eventos = QTextEdit()
+        self.txt_info_eventos.setPlaceholderText("Ej: Lives los viernes, descuentos en eventos especiales, reservaciones por WhatsApp.")
+        self.txt_info_eventos.setFixedHeight(80)
+        self.txt_info_eventos.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); border: 1px solid #222222; border-radius: 10px; color: #FFFFFF;")
+        layout.addWidget(self.txt_info_eventos)
+
+        self.custom_training_label = QLabel("Instrucciones adicionales para el asistente")
+        self.custom_training_label.setProperty("class", "QuestionLabel")
+        layout.addWidget(self.custom_training_label)
+        self.custom_training_input = QTextEdit()
+        self.custom_training_input.setPlaceholderText("Ej: Atiende con amabilidad, ofrece descuentos en paquetes y siempre menciona el envío.")
+        self.custom_training_input.setMinimumHeight(100)
+        self.custom_training_input.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); border: 1px solid #222222; border-radius: 10px; color: #FFFFFF;")
+        layout.addWidget(self.custom_training_input)
+
         self.page5_status = QLabel("Define las reglas operativas antes de continuar al resumen final.")
         self.page5_status.setStyleSheet("color: #a5b1c2; margin-top: 8px;")
         layout.addWidget(self.page5_status)
@@ -672,6 +1087,7 @@ class AddAccountDialog(QDialog):
         layout = QVBoxLayout(self.page6)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         title = QLabel("Resumen y Prueba de Agente")
         title.setObjectName("StepTitle")
@@ -774,6 +1190,7 @@ class AddAccountDialog(QDialog):
             f"Tasa de cambio: {self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else 'No definida'}",
             f"WhatsApp de contacto: {self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else 'No definido'}",
             f"Métodos de pago: {', '.join(payments) if payments else 'No definidos'}",
+            f"Lives / eventos: {self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else 'No definidos'}",
             "",
             "Instrucciones personalizadas del asistente:",
             custom or "- Sin instrucciones adicionales -",
@@ -809,6 +1226,8 @@ class AddAccountDialog(QDialog):
                     'location': self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
                     'website': self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
                     'exchange_rate': self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
+                    'payment_methods': [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
+                    'info_eventos': self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else '',
                     'bot_name': self.assistant_name_input.text().strip(),
                     'whatsapp_contacto': self.txt_whatsapp.text().strip(),
                     'bot_role': self.personality_selected,
@@ -824,6 +1243,8 @@ class AddAccountDialog(QDialog):
                     inventory_rows=inventory_rows,
                     time_context="CONTINUOUS",
                     custom_training=self.custom_training_input.toPlainText().strip(),
+                    current_state=config.get('current_state', 'CONSULTA'),
+                    bot_mission=config.get('bot_mission', 'Ventas'),
                 )
             else:
                 answer = self.ai_service.generate_response(
@@ -837,6 +1258,9 @@ class AddAccountDialog(QDialog):
                     location=self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
                     website=self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
                     exchange_rate=self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
+                    currency_symbol=self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'Bs',
+                    payment_methods=[btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
+                    info_eventos=self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else '',
                     time_context="CONTINUOUS",
                     custom_training=self.custom_training_input.toPlainText().strip(),
                 )
@@ -884,13 +1308,16 @@ class AddAccountDialog(QDialog):
         self.description_input.setPlainText(account_data.get('business_data', account_data.get('description', '')))
         self.personality_selected = account_data.get('bot_role', account_data.get('context_type', 'Vendedor Quirúrgico'))
         self.select_personality_card(self.personality_selected)
+        if hasattr(self, 'mission_selected'):
+            self.select_mission_card(account_data.get('bot_mission', 'Ventas'))
         self.start_time.setTime(QTime.fromString(account_data.get('schedule_start', '08:00'), 'HH:mm'))
         self.end_time.setTime(QTime.fromString(account_data.get('schedule_end', '18:00'), 'HH:mm'))
         self.hidden_prompt = account_data.get('system_prompt', '')
         self.csv_path = os.path.abspath(account_data.get('inventory_path', '')) if account_data.get('inventory_path') else ''
         self.inventory_connected = bool(self.csv_path)
         if self.inventory_connected:
-            self.catalog_status.setText(f"✅ {self.csv_path}")
+            if hasattr(self, 'catalog_status_label'):
+                self.catalog_status_label.setText(f"✅ {self.csv_path}")
             self.inventory_headers = account_data.get('inventory_metadata', {}).get('headers', [])
             self.inventory_rows = account_data.get('inventory_rows', 0)
         if hasattr(self, 'txt_whatsapp'):
@@ -899,20 +1326,30 @@ class AddAccountDialog(QDialog):
             self.txt_ubicacion.setText(account_data.get('location', account_data.get('ubicacion', '')))
         if hasattr(self, 'txt_website'):
             self.txt_website.setText(account_data.get('website', ''))
+        self.config_country = account_data.get('country', account_data.get('config_country', 'Venezuela'))
         if hasattr(self, 'txt_country'):
-            self.txt_country.setText(account_data.get('country', 'Venezuela'))
+            self.txt_country.setText(self.config_country)
+        self.config_language = account_data.get('language', account_data.get('config_language', 'es'))
         if hasattr(self, 'txt_language'):
-            self.txt_language.setText(account_data.get('language', 'es'))
+            self.txt_language.setText(self.config_language)
         if hasattr(self, 'txt_currency_symbol'):
             self.txt_currency_symbol.setText(account_data.get('currency_symbol', 'Bs'))
+        self.config_exchange = account_data.get('exchange_rate', account_data.get('config_exchange', ''))
         if hasattr(self, 'txt_tasa_cambio'):
-            self.txt_tasa_cambio.setText(account_data.get('exchange_rate', ''))
+            self.txt_tasa_cambio.setText(self.config_exchange)
         if hasattr(self, 'txt_envios'):
             self.txt_envios.setText(account_data.get('envios', ''))
+        self.config_payments = account_data.get('payment_methods_text', account_data.get('config_payments', ''))
+        self.side_payment_text = self.config_payments
+        if hasattr(self, 'side_payment_input'):
+            self.side_payment_input.setPlainText(self.side_payment_text)
         if hasattr(self, 'payment_buttons'):
             selected_payments = set(account_data.get('payment_methods', []))
             for btn in self.payment_buttons:
                 btn.setChecked(btn.text() in selected_payments)
+        self.config_faq = account_data.get('info_eventos', account_data.get('config_faq', ''))
+        if hasattr(self, 'txt_info_eventos'):
+            self.txt_info_eventos.setPlainText(self.config_faq)
         if hasattr(self, 'business_type_combo'):
             business_type = account_data.get('type') or account_data.get('context_type')
             if business_type and self.business_type_combo.findText(business_type) >= 0:
@@ -920,11 +1357,11 @@ class AddAccountDialog(QDialog):
             elif business_type:
                 normalized = business_type.strip().lower()
                 if 'retail' in normalized or 'vendedor' in normalized:
-                    self.business_type_combo.setCurrentText('Retail')
+                    self.business_type_combo.setCurrentText('Comercio')
                 elif 'profesional' in normalized or 'soporte' in normalized:
                     self.business_type_combo.setCurrentText('Profesional')
                 elif 'booking' in normalized or 'cita' in normalized:
-                    self.business_type_combo.setCurrentText('Booking')
+                    self.business_type_combo.setCurrentText('Reservas')
                 elif 'marca' in normalized or 'personal' in normalized:
                     self.business_type_combo.setCurrentText('Marca Personal')
                 else:
@@ -1040,17 +1477,23 @@ class AddAccountDialog(QDialog):
             self.inventory_headers = headers
             self.inventory_rows = len(rows)
             file_name = path.replace('\\', '/').split('/')[-1]
-            self.catalog_status.setText(f"✅ {file_name} cargado correctamente")
+            if hasattr(self, 'catalog_status_label'):
+                self.catalog_status_label.setText(f"✅ {file_name} cargado correctamente")
             self.page3_status.setText("Catálogo listo. Puedes continuar.")
             self.inventory_connected = True
             self.footer_next.setEnabled(True)
+            if hasattr(self, '_update_status_cards'):
+                self._update_status_cards()
         except Exception as e:
             self.inventory_connected = False
             self.inventory_headers = []
             self.inventory_rows = 0
-            self.catalog_status.setText(f"Error al analizar el archivo: {e}")
+            if hasattr(self, 'catalog_status_label'):
+                self.catalog_status_label.setText(f"Error al analizar el archivo: {e}")
             self.page3_status.setText("No se pudo cargar el catálogo. Intenta con otro archivo.")
             self.footer_next.setEnabled(False)
+            if hasattr(self, '_update_status_cards'):
+                self._update_status_cards()
 
     def _read_csv(self, path):
         with open(path, newline='', encoding='utf-8') as csvfile:
@@ -1097,9 +1540,12 @@ class AddAccountDialog(QDialog):
         self.inventory_headers = []
         self.inventory_rows = 0
         self.inventory_type = ""
-        self.catalog_status.setText("Continuar sin catálogo. El bot usará solo el contexto de la tienda.")
+        if hasattr(self, 'catalog_status_label'):
+            self.catalog_status_label.setText("Continuar sin catálogo. El bot usará solo el contexto de la tienda.")
         self.page3_status.setText("Has decidido continuar sin catálogo.")
         self.footer_next.setEnabled(True)
+        if hasattr(self, '_update_status_cards'):
+            self._update_status_cards()
 
     def show_loading(self, text="Procesando..."):
         self.loading_overlay.setGeometry(self.rect())
@@ -1177,15 +1623,29 @@ class AddAccountDialog(QDialog):
             prompt += " Responde con seriedad, precisión y profesionalismo, enfocándote en la solución del cliente."
 
         self.hidden_prompt = prompt
+        if hasattr(self, '_update_status_cards'):
+            self._update_status_cards()
 
     def select_personality_card(self, name):
         self.personality_selected = name
         for card in self.personality_buttons:
-            card.setChecked(card.text().startswith(name))
-            card.setProperty("selected", card.text().startswith(name))
+            selected = card.text().startswith(name)
+            card.setChecked(selected)
+            card.setProperty("selected", selected)
             card.style().unpolish(card)
             card.style().polish(card)
         self.update_role_logic()
+
+    def select_mission_card(self, name):
+        self.mission_selected = name
+        for card in self.mission_buttons:
+            selected = card.text() == name
+            card.setChecked(selected)
+            card.setProperty("selected", selected)
+            card.style().unpolish(card)
+            card.style().polish(card)
+        if hasattr(self, 'page2_status'):
+            self.page2_status.setText(f"Misión seleccionada: {name}")
 
     def animate_fade(self):
         animation = QPropertyAnimation(self.fade_effect, b"opacity", self)
@@ -1199,6 +1659,12 @@ class AddAccountDialog(QDialog):
         if self.end_time.time() <= self.start_time.time():
             self.schedule_warning.setText("El horario de cierre debe ser posterior al de apertura")
             return
+        if hasattr(self, 'btn_finalize_save'):
+            self.btn_finalize_save.setText("Guardando configuración...")
+            self.btn_finalize_save.setEnabled(False)
+        QTimer.singleShot(300, self._finish_save_commit)
+
+    def _finish_save_commit(self):
         self.accept()
 
     def get_data(self):
@@ -1233,13 +1699,16 @@ class AddAccountDialog(QDialog):
             "security_level": "High",
             "system_prompt_final": self.hidden_prompt,
             "whatsapp_number": self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else "",
-            "country": self.txt_country.text().strip() if hasattr(self, 'txt_country') else "Venezuela",
-            "language": self.txt_language.text().strip() if hasattr(self, 'txt_language') else "es",
+            "country": self.config_country,
+            "language": self.config_language,
             "currency_symbol": self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else "Bs",
             "location": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
             "website": self.txt_website.text().strip() if hasattr(self, 'txt_website') else "",
-            "exchange_rate": self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else "",
+            "exchange_rate": self.config_exchange,
             "ubicacion": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
             "envios": self.txt_envios.text().strip() if hasattr(self, 'txt_envios') else "",
+            "bot_mission": self.mission_selected if hasattr(self, 'mission_selected') else "Ventas",
             "payment_methods": [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
+            "payment_methods_text": self.config_payments,
+            "info_eventos": self.config_faq,
         }
