@@ -1,5 +1,6 @@
 import csv
 import importlib
+import json
 import os
 import random
 import qtawesome as qta
@@ -17,16 +18,17 @@ from PyQt6.QtWidgets import (
     QWidget,
     QFileDialog,
     QScrollArea,
-    QGraphicsOpacityEffect,
     QGraphicsDropShadowEffect,
     QSizePolicy,
     QFrame,
     QInputDialog,
     QGridLayout,
+    QCheckBox,
     QLayout,
+    QMessageBox,
 )
 from PyQt6.QtGui import QTransform, QColor
-from PyQt6.QtCore import Qt, QTime, QThread, pyqtSignal, QTimer, QPropertyAnimation
+from PyQt6.QtCore import Qt, QTime, QThread, pyqtSignal, QTimer, QPropertyAnimation, QPoint
 from core.ai_engine import AIService
 from services.instagram_service import InstagramService
 
@@ -79,9 +81,39 @@ class AddAccountDialog(QDialog):
             self.account_data = dict(account_data)
         else:
             self.account_data = account_data or {}
+        self.current_state = {
+            "id": self.account_data.get("id") if self.account_data else None,
+            "insta_user": self.account_data.get("insta_user", ""),
+            "insta_pass": self.account_data.get("insta_pass", ""),
+            "store_name": self.account_data.get("store_name", ""),
+            "description": self.account_data.get("description", ""),
+            "system_prompt": self.account_data.get("system_prompt", ""),
+            "system_prompt_final": self.account_data.get("system_prompt", ""),
+            "bot_enabled": self.account_data.get("bot_enabled", 0),
+            "bot_role": self.account_data.get("bot_role", "VENDEDOR"),
+            "bot_name": self.account_data.get("bot_name", "Pegasus"),
+            "inventory_path": self.account_data.get("inventory_path", ""),
+            "start_time": self.account_data.get("start_time", "08:00"),
+            "end_time": self.account_data.get("end_time", "18:00"),
+            "proxy": self.account_data.get("proxy", "Auto"),
+            "security_level": self.account_data.get("security_level", "High"),
+            "whatsapp_number": self.account_data.get("whatsapp_number", ""),
+            "country": self.account_data.get("country", "Venezuela"),
+            "language": self.account_data.get("language", "Español"),
+            "currency_symbol": self.account_data.get("currency_symbol", "$"),
+            "location": self.account_data.get("location", ""),
+            "website": self.account_data.get("website", ""),
+            "envios": self.account_data.get("envios", ""),
+            "bot_mission": self.account_data.get("bot_mission", "Ventas"),
+            "payment_methods": self.account_data.get("payment_methods", []),
+            "payment_method_details": self.account_data.get("payment_method_details", {}),
+            "payment_methods_text": self.account_data.get("payment_methods_text", ""),
+            "info_eventos": self.account_data.get("info_eventos", self.account_data.get("config_faq", "")),
+        }
         self.is_edit_mode = bool(account_data)
         self.account_id = self.account_data.get('id') if self.is_edit_mode else None
         self.setWindowTitle("Configuración de Agente Pegasus" if not self.is_edit_mode else "Configuración de Cuenta")
+        self.setMinimumSize(1000, 700)
         self.setObjectName("ModernDialog")
 
         self.insta_service = InstagramService()
@@ -97,8 +129,8 @@ class AddAccountDialog(QDialog):
         self.hidden_prompt = ""
         self.config_country = "Venezuela"
         self.config_language = "es"
-        self.config_exchange = "1 USD = 36.5 Bs"
         self.config_payments = ""
+        self.payment_method_details = {}
         self.config_faq = ""
         self.digested_context_data = {}
         self.ai_service = AIService()
@@ -121,12 +153,12 @@ class AddAccountDialog(QDialog):
                 margin-bottom: 20px;
             }
             QLineEdit, QTextEdit {
-                background-color: rgba(255, 255, 255, 0.02);
+                background: #1A1A1A;
                 color: #FFFFFF;
                 font-size: 14px;
                 padding: 12px 10px;
                 border: none;
-                border-bottom: 1px solid #333333;
+                border-bottom: 1px solid #444444;
                 border-radius: 4px 4px 0 0;
                 margin-bottom: 15px;
             }
@@ -207,13 +239,13 @@ class AddAccountDialog(QDialog):
         """)
 
         self.main_layout = QHBoxLayout(self)
-        self.main_layout.setContentsMargins(15, 15, 15, 15)
-        self.main_layout.setSpacing(18)
+        self.main_layout.setContentsMargins(18, 18, 18, 18)
+        self.main_layout.setSpacing(20)
         # Esto es la magia del Shrink-Wrap: La ventana se ajustará al panel
         self.main_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
 
         self.wizard_container = QFrame()
-        self.wizard_container.setFixedSize(480, 580)
+        self.wizard_container.setFixedSize(520, 650)
         self.wizard_container.setObjectName("WizardContainer")
         self.wizard_container.setStyleSheet(
             "QFrame#WizardContainer{background-color:#0B0B0B; border-radius:24px;}"
@@ -247,19 +279,15 @@ class AddAccountDialog(QDialog):
         self._build_page2()
         self._build_page3()
         self._build_page4()
-        self._build_page5()
+        self._build_side_panel()
         self._build_page6()
 
         self.stacked.addWidget(self.page1)
         self.stacked.addWidget(self.page2)
         self.stacked.addWidget(self.page3)
         self.stacked.addWidget(self.page4)
-        self.stacked.addWidget(self.page5)
         self.stacked.addWidget(self.page6)
         self.stacked.currentChanged.connect(self.on_page_changed)
-
-        self.fade_effect = QGraphicsOpacityEffect(self.stacked)
-        self.stacked.setGraphicsEffect(self.fade_effect)
 
         self.layout.addWidget(self.stacked)
 
@@ -323,8 +351,8 @@ class AddAccountDialog(QDialog):
     def _build_side_panel(self):
         self.side_panel_container = QFrame()
         self.side_panel_container.setObjectName("SidePanelContainer")
-        self.side_panel_container.setFixedWidth(0)
-        self.side_panel_container.setMaximumWidth(300)
+        self.side_panel_container.setMinimumWidth(0)
+        self.side_panel_container.setMaximumWidth(270)
         self.side_panel_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.side_panel_container.setStyleSheet(
             "QFrame#SidePanelContainer{background-color:#101010; border-radius:20px;}"
@@ -344,6 +372,7 @@ class AddAccountDialog(QDialog):
 
         self.side_panel_scroll = QScrollArea()
         self.side_panel_scroll.setWidgetResizable(True)
+        self.side_panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.side_panel_scroll.setStyleSheet(
             "QScrollArea{background: transparent; border: none;}"
             "QScrollBar:vertical{width: 8px; background: transparent; margin: 0 0 0 0;}"
@@ -366,8 +395,10 @@ class AddAccountDialog(QDialog):
 
         self.side_panel_stack.addWidget(self._create_finance_panel_page())
         self.side_panel_stack.addWidget(self._create_catalog_panel_page())
+        self.side_panel_stack.addWidget(self._create_info_panel_page())
         self.side_panel_stack.addWidget(self._create_attention_panel_page())
         self.side_panel_stack.addWidget(self._create_faq_panel_page())
+        self.side_panel_stack.addWidget(self._create_test_chat_panel_page())
 
         self.side_panel_container.setVisible(False)
         self.main_layout.addWidget(self.side_panel_container)
@@ -378,10 +409,10 @@ class AddAccountDialog(QDialog):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(10)
 
-        close_button = QPushButton(qta.icon('fa5s.arrow-left', color='#00E5FF'), "Cerrar")
+        close_button = QPushButton(qta.icon('fa5s.arrow-left', color='#00E5FF'), "Atrás")
         close_button.setObjectName("FlatBtn")
         close_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_button.clicked.connect(lambda: self.toggle_side_panel(False))
+        close_button.clicked.connect(self._close_side_panel)
         header_layout.addWidget(close_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         label = QLabel(title)
@@ -402,42 +433,150 @@ class AddAccountDialog(QDialog):
         layout.setSpacing(12)
 
         layout.addWidget(self._create_side_panel_page_header(
-            "Finanzas", "Ajusta país, idioma, tasa de cambio y métodos de pago."))
+            "Finanzas", "Ajusta país e idioma."))
 
         self.side_country_combo = QComboBox()
         self.side_country_combo.addItems(["Venezuela", "México", "Colombia", "Argentina", "Chile", "Perú"])
         self.side_country_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.side_country_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.side_country_combo.setMaximumWidth(300)
         self.side_country_combo.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
         layout.addWidget(QLabel("País de operación"))
         layout.addWidget(self.side_country_combo)
 
         self.side_language_input = QLineEdit()
         self.side_language_input.setPlaceholderText("Ej: es")
+        self.side_language_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.side_language_input.setMaximumWidth(300)
         self.side_language_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
         layout.addWidget(QLabel("Idioma principal"))
         layout.addWidget(self.side_language_input)
 
-        self.side_exchange_input = QLineEdit()
-        self.side_exchange_input.setPlaceholderText("Ej: 1 USD = 3.600.000 Bs")
-        self.side_exchange_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
-        layout.addWidget(QLabel("Tasa de cambio"))
-        layout.addWidget(self.side_exchange_input)
+        payment_title = QLabel("Métodos de pago aceptados:")
+        payment_title.setStyleSheet("color: #FFFFFF; font-weight: bold;")
+        payment_title.setWordWrap(True)
+        layout.addWidget(payment_title)
 
-        self.side_payment_input = QTextEdit()
-        self.side_payment_input.setPlaceholderText("Ej: Pago Móvil, Zelle, Binance, Efectivo")
-        self.side_payment_input.setFixedHeight(120)
-        self.side_payment_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
-        layout.addWidget(QLabel("Métodos de Pago"))
-        layout.addWidget(self.side_payment_input)
+        add_payment_layout = QHBoxLayout()
+        add_payment_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.cmb_payment = QComboBox()
+        self.cmb_payment.setEditable(True)
+        self.cmb_payment.addItems(["Efectivo", "Pago Móvil", "Binance Pay", "Zelle", "Transferencia", "PayPal"])
+        self.cmb_payment.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.cmb_payment.setMaximumWidth(180)
+        self.cmb_payment.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.cmb_payment.currentTextChanged.connect(self._on_payment_type_changed)
+
+        btn_add_payment = QPushButton("Añadir")
+        btn_add_payment.setStyleSheet("background-color: #00E5FF; color: black; font-weight: bold; padding: 8px 10px; border-radius: 4px;")
+        btn_add_payment.setMaximumWidth(80)
+        btn_add_payment.clicked.connect(self._add_payment_chip)
+
+        self.payment_stack = QStackedWidget()
+        self.payment_stack.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.payment_stack.setMaximumWidth(300)
+
+        self.txt_pm_banco = QLineEdit()
+        self.txt_pm_banco.setPlaceholderText("Banco")
+        self.txt_pm_banco.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.txt_pm_ci = QLineEdit()
+        self.txt_pm_ci.setPlaceholderText("Cédula")
+        self.txt_pm_ci.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.txt_pm_telf = QLineEdit()
+        self.txt_pm_telf.setPlaceholderText("Teléfono")
+        self.txt_pm_telf.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        pm_page = QWidget()
+        pm_layout = QHBoxLayout(pm_page)
+        pm_layout.setContentsMargins(0, 0, 0, 0)
+        pm_layout.setSpacing(8)
+        pm_layout.addWidget(self.txt_pm_banco)
+        pm_layout.addWidget(self.txt_pm_ci)
+        pm_layout.addWidget(self.txt_pm_telf)
+        self.payment_stack.addWidget(pm_page)
+
+        self.txt_zelle_correo = QLineEdit()
+        self.txt_zelle_correo.setPlaceholderText("Correo Zelle")
+        self.txt_zelle_correo.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.txt_zelle_nombre = QLineEdit()
+        self.txt_zelle_nombre.setPlaceholderText("Titular")
+        self.txt_zelle_nombre.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        zelle_page = QWidget()
+        zelle_layout = QHBoxLayout(zelle_page)
+        zelle_layout.setContentsMargins(0, 0, 0, 0)
+        zelle_layout.setSpacing(8)
+        zelle_layout.addWidget(self.txt_zelle_correo)
+        zelle_layout.addWidget(self.txt_zelle_nombre)
+        self.payment_stack.addWidget(zelle_page)
+
+        self.txt_transf_banco = QLineEdit()
+        self.txt_transf_banco.setPlaceholderText("Banco")
+        self.txt_transf_banco.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.txt_transf_cuenta = QLineEdit()
+        self.txt_transf_cuenta.setPlaceholderText("N° Cuenta")
+        self.txt_transf_cuenta.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        self.txt_transf_ci = QLineEdit()
+        self.txt_transf_ci.setPlaceholderText("CI/RIF")
+        self.txt_transf_ci.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        transf_page = QWidget()
+        transf_layout = QHBoxLayout(transf_page)
+        transf_layout.setContentsMargins(0, 0, 0, 0)
+        transf_layout.setSpacing(8)
+        transf_layout.addWidget(self.txt_transf_banco)
+        transf_layout.addWidget(self.txt_transf_cuenta)
+        transf_layout.addWidget(self.txt_transf_ci)
+        self.payment_stack.addWidget(transf_page)
+
+        self.txt_pago_generico = QLineEdit()
+        self.txt_pago_generico.setPlaceholderText("Correo, ID o Detalle")
+        self.txt_pago_generico.setStyleSheet("background-color: #1A1A1A; color: white; padding: 8px; border-radius: 4px;")
+        generic_page = QWidget()
+        generic_layout = QHBoxLayout(generic_page)
+        generic_layout.setContentsMargins(0, 0, 0, 0)
+        generic_layout.setSpacing(8)
+        generic_layout.addWidget(self.txt_pago_generico)
+        self.payment_stack.addWidget(generic_page)
+        self.payment_stack.setCurrentIndex(3)
+
+        add_payment_layout.addWidget(self.cmb_payment, 1)
+        add_payment_layout.addWidget(btn_add_payment)
+        layout.addLayout(add_payment_layout)
+        layout.addWidget(self.payment_stack)
+
+        self.chips_layout = QHBoxLayout()
+        self.chips_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout.addLayout(self.chips_layout)
+
+        self.payment_methods_data = []
+        raw_methods = self.account_data.get('payment_methods', '[]') if self.account_data else '[]'
+        raw_details = self.account_data.get('payment_method_details', '{}') if self.account_data else '{}'
+        try:
+            existing_payments = json.loads(raw_methods) if isinstance(raw_methods, str) else (raw_methods or [])
+            existing_details = json.loads(raw_details) if isinstance(raw_details, str) else (raw_details or {})
+        except Exception:
+            existing_payments, existing_details = [], {}
+
+        for method in existing_payments:
+            self._create_chip(method, existing_details.get(method, ""))
 
         btn_save = QPushButton("Listo")
         btn_save.setObjectName("PrimaryBtn")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(lambda: self._save_finance_panel())
-        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
         return page
+
+    def _on_payment_type_changed(self, text):
+        text_lower = text.lower()
+        if "móvil" in text_lower or "movil" in text_lower:
+            self.payment_stack.setCurrentIndex(0)
+        elif "zelle" in text_lower:
+            self.payment_stack.setCurrentIndex(1)
+        elif "transferencia" in text_lower:
+            self.payment_stack.setCurrentIndex(2)
+        else:
+            self.payment_stack.setCurrentIndex(3)
 
     def _create_faq_panel_page(self):
         page = QWidget()
@@ -450,18 +589,130 @@ class AddAccountDialog(QDialog):
 
         self.side_faq_text = QTextEdit()
         self.side_faq_text.setPlaceholderText("Ej: Lives los viernes, promociones especiales, preguntas frecuentes, detalles de eventos...")
-        self.side_faq_text.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        self.side_faq_text.setStyleSheet("background: #1A1A1A; color: #FFFFFF; border: none; border-bottom: 1px solid #444444; border-radius: 10px; padding: 10px;")
         self.side_faq_text.setMinimumHeight(260)
+        self.side_faq_text.setMaximumWidth(250)
         layout.addWidget(self.side_faq_text)
 
         btn_save = QPushButton("Listo")
         btn_save.setObjectName("PrimaryBtn")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(lambda: self._save_faq_panel())
-        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
         return page
+
+    def _create_test_chat_panel_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(14)
+
+        layout.addWidget(self._create_side_panel_page_header(
+            "Prueba de Pegasus", "Prueba la configuración del asistente directamente en el chat lateral."))
+
+        chat_card = QFrame()
+        chat_card.setStyleSheet(
+            "QFrame{background-color: rgba(255,255,255,0.04); border-radius: 18px; border: 1px solid rgba(255,255,255,0.08); }"
+        )
+        chat_card.setMinimumWidth(270)
+        chat_card.setMaximumWidth(270)
+        chat_card.setMaximumHeight(340)
+        chat_card_layout = QVBoxLayout(chat_card)
+        chat_card_layout.setContentsMargins(12, 12, 12, 12)
+        chat_card_layout.setSpacing(10)
+
+        self.test_chat_history_area = QScrollArea()
+        self.test_chat_history_area.setWidgetResizable(True)
+        self.test_chat_history_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.test_chat_history_area.setStyleSheet(
+            "QScrollArea{background: transparent; border: none;}"
+            "QScrollBar:vertical{width: 8px; background: transparent; margin: 0 0 0 0;}"
+            "QScrollBar::handle:vertical{background: rgba(255,255,255,0.15); border-radius: 4px;}"
+            "QScrollBar::handle:vertical:hover{background: rgba(255,255,255,0.25);}" 
+            "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page{height: 0; background: transparent;}"
+        )
+
+        self.test_chat_history_widget = QWidget()
+        self.test_chat_history_widget.setStyleSheet("background: transparent;")
+        self.test_chat_history_layout = QVBoxLayout(self.test_chat_history_widget)
+        self.test_chat_history_layout.setContentsMargins(0, 0, 0, 0)
+        self.test_chat_history_layout.setSpacing(10)
+        self.test_chat_history_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self.test_chat_history_area.setWidget(self.test_chat_history_widget)
+        self.test_chat_history_area.setMinimumHeight(200)
+        self.test_chat_history_area.setMaximumHeight(220)
+        self.test_chat_history_area.setMaximumWidth(256)
+        chat_card_layout.addWidget(self.test_chat_history_area)
+
+        input_row = QHBoxLayout()
+        input_row.setContentsMargins(0, 0, 0, 0)
+        input_row.setSpacing(10)
+
+        self.test_chat_input = QLineEdit()
+        self.test_chat_input.setPlaceholderText("Escribe tu mensaje...")
+        self.test_chat_input.setStyleSheet(
+            "QLineEdit{background-color: rgba(255,255,255,0.08); color: #FFFFFF; border: none; border-radius: 16px; padding: 10px 12px;}"
+            "QLineEdit:focus{border-color: rgba(0,229,255,0.35); }"
+        )
+        self.test_chat_input.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.test_chat_input.setMaximumWidth(180)
+        self.test_chat_input.returnPressed.connect(self.test_agent_response)
+        input_row.addWidget(self.test_chat_input, 1)
+
+        chat_send = QPushButton("Enviar")
+        chat_send.setObjectName("PrimaryBtn")
+        chat_send.setCursor(Qt.CursorShape.PointingHandCursor)
+        chat_send.setFixedWidth(80)
+        chat_send.clicked.connect(self.test_agent_response)
+        input_row.addWidget(chat_send)
+
+        chat_card_layout.addLayout(input_row)
+        layout.addWidget(chat_card, alignment=Qt.AlignmentFlag.AlignTop)
+        return page
+
+    def _append_test_chat_message(self, text, sender="user"):
+        bubble = QLabel(text)
+        bubble.setWordWrap(True)
+        bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        bubble.setMaximumWidth(280)
+
+        if sender == "user":
+            bubble.setStyleSheet(
+                "QLabel{background-color:#0A6CFB; color:#FFFFFF; border-radius: 18px; padding: 12px 14px; margin-left: 60px;}"
+            )
+            container_layout = QHBoxLayout()
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addStretch()
+            container_layout.addWidget(bubble)
+        else:
+            bubble.setStyleSheet(
+                "QLabel{background-color:#262626; color:#E8E8E8; border-radius: 18px; padding: 12px 14px; margin-right: 60px;}"
+            )
+            container_layout = QHBoxLayout()
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.addWidget(bubble)
+            container_layout.addStretch()
+
+        container_widget = QWidget()
+        container_widget.setLayout(container_layout)
+        self.test_chat_history_layout.addWidget(container_widget)
+        self.test_chat_history_area.verticalScrollBar().setValue(self.test_chat_history_area.verticalScrollBar().maximum())
+
+    def _clear_test_chat_history(self):
+        if hasattr(self, 'test_chat_history_layout'):
+            while self.test_chat_history_layout.count():
+                item = self.test_chat_history_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+                elif item.layout():
+                    while item.layout().count():
+                        child = item.layout().takeAt(0)
+                        if child.widget():
+                            child.widget().deleteLater()
+                    item.layout().deleteLater()
 
     def _create_catalog_panel_page(self):
         page = QFrame()
@@ -470,19 +721,45 @@ class AddAccountDialog(QDialog):
         layout.setSpacing(14)
 
         layout.addWidget(self._create_side_panel_page_header(
-            "Catálogo", "Revisa y gestiona la información del inventario cargado."))
+            "Catálogo", "Adjunta tu catálogo o inventario y revisa el archivo cargado."))
+
+        btn_attach_catalog = QPushButton(qta.icon('fa5s.upload', color='#00E5FF'), "  Adjuntar catálogo / inventario")
+        btn_attach_catalog.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_attach_catalog.setStyleSheet(
+            "QPushButton {"
+            "background-color: rgba(255,255,255,0.04);"
+            "color: #FFFFFF;"
+            "border: 1px solid rgba(255,255,255,0.08);"
+            "border-radius: 20px;"
+            "padding: 18px 22px;"
+            "text-align: left;"
+            "font-size: 14px;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: rgba(0, 229, 255, 0.08);"
+            "border-color: rgba(0,229,255,0.25);"
+            "}"
+        )
+        btn_attach_catalog.clicked.connect(self.browse_inventory_file)
+        layout.addWidget(btn_attach_catalog, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.side_catalog_info = QLabel()
         self.side_catalog_info.setStyleSheet("color: #A0A0A0; font-size: 13px;")
         self.side_catalog_info.setWordWrap(True)
         layout.addWidget(self.side_catalog_info)
+
+        self.lbl_file_path = QLabel()
+        self.lbl_file_path.setStyleSheet("color: #A0E5FF; font-size: 12px;")
+        self.lbl_file_path.setWordWrap(True)
+        layout.addWidget(self.lbl_file_path)
+
         self._refresh_side_catalog_info()
 
-        btn_close = QPushButton("Cerrar")
-        btn_close.setObjectName("PrimaryBtn")
-        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_close.clicked.connect(lambda: self.toggle_side_panel(False))
-        layout.addWidget(btn_close, alignment=Qt.AlignmentFlag.AlignRight)
+        btn_save = QPushButton("Listo")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.clicked.connect(self._save_catalog_panel)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
         return page
@@ -494,41 +771,108 @@ class AddAccountDialog(QDialog):
         layout.setSpacing(14)
 
         layout.addWidget(self._create_side_panel_page_header(
-            "Atención", "Ajusta el horario de atención y el estado activo."))
+            "Atención", "Define el horario en el que trabajará el bot y ajusta su estado activo."))
 
         self.side_attention_info = QLabel()
         self.side_attention_info.setStyleSheet("color: #A0A0A0; font-size: 13px;")
         self.side_attention_info.setWordWrap(True)
         layout.addWidget(self.side_attention_info)
 
-        time_frame = QFrame()
-        time_frame.setStyleSheet("background-color: rgba(255,255,255,0.03); border: 1px solid #222222; border-radius: 12px;")
-        time_layout = QHBoxLayout(time_frame)
-        time_layout.setContentsMargins(12, 12, 12, 12)
-        time_layout.setSpacing(12)
+        section_label = QLabel("Encendido Automático del Bot")
+        section_label.setStyleSheet("color: #FFFFFF; font-weight: bold;")
+        layout.addWidget(section_label)
+
+        bot_time_frame = QFrame()
+        bot_time_frame.setStyleSheet("background-color: rgba(255,255,255,0.03); border: 1px solid #222222; border-radius: 12px;")
+        bot_time_layout = QHBoxLayout(bot_time_frame)
+        bot_time_layout.setContentsMargins(10, 10, 10, 10)
+        bot_time_layout.setSpacing(8)
 
         self.start_time = QTimeEdit()
         self.start_time.setDisplayFormat("HH:mm")
         self.start_time.setTime(QTime(8, 0))
         self.start_time.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.start_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
-        time_layout.addWidget(self.start_time)
+        self.start_time.setMaximumWidth(96)
+        self.start_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 9px;")
+        bot_time_layout.addWidget(self.start_time)
 
         self.end_time = QTimeEdit()
         self.end_time.setDisplayFormat("HH:mm")
         self.end_time.setTime(QTime(20, 0))
         self.end_time.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.end_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
-        time_layout.addWidget(self.end_time)
+        self.end_time.setMaximumWidth(96)
+        self.end_time.setStyleSheet("background: transparent; color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 9px;")
+        bot_time_layout.addWidget(self.end_time)
 
-        layout.addWidget(time_frame)
+        layout.addWidget(bot_time_frame)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setFrameShadow(QFrame.Shadow.Sunken)
+        divider.setStyleSheet("color: rgba(255,255,255,0.12);")
+        layout.addWidget(divider)
+
+        company_label = QLabel("Horario de Operación de la Empresa")
+        company_label.setStyleSheet("color: #FFFFFF; font-weight: bold;")
+        layout.addWidget(company_label)
+
+        business_days = self.account_data.get('business_days', {}) if isinstance(self.account_data, dict) else {}
+        if isinstance(business_days, list):
+            business_days = {day: day in business_days for day in ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]}
+        elif not isinstance(business_days, dict):
+            business_days = {}
+
+        self.business_day_checkboxes = {}
+        days_widget = QWidget()
+        days_layout = QHBoxLayout(days_widget)
+        days_layout.setContentsMargins(0, 0, 0, 0)
+        days_layout.setSpacing(6)
+
+        day_names = [
+            ("Dom", "#FF5555"),
+            ("Lun", "#FFFFFF"),
+            ("Mar", "#FFFFFF"),
+            ("Mié", "#FFFFFF"),
+            ("Jue", "#FFFFFF"),
+            ("Vie", "#FFFFFF"),
+            ("Sáb", "#FFFFFF"),
+        ]
+
+        for day, color in day_names:
+            day_box = QWidget()
+            day_box_layout = QVBoxLayout(day_box)
+            day_box_layout.setContentsMargins(0, 0, 0, 0)
+            day_box_layout.setSpacing(4)
+            day_box_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            day_label = QLabel(day)
+            day_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+            day_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            day_checkbox = QCheckBox()
+            day_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+            day_checkbox.setChecked(bool(business_days.get(day, False)))
+
+            self.business_day_checkboxes[day] = day_checkbox
+            day_box_layout.addWidget(day_label, alignment=Qt.AlignmentFlag.AlignCenter)
+            day_box_layout.addWidget(day_checkbox, alignment=Qt.AlignmentFlag.AlignCenter)
+            days_layout.addWidget(day_box)
+
+        layout.addWidget(days_widget)
+
+        self.business_hours_text_input = QLineEdit()
+        self.business_hours_text_input.setPlaceholderText("8:00 AM - 6:00 PM (Corrido)")
+        self.business_hours_text_input.setMaximumWidth(260)
+        self.business_hours_text_input.setStyleSheet("background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px;")
+        self.business_hours_text_input.setText(self.account_data.get('business_hours_text', '') if isinstance(self.account_data, dict) else "")
+        layout.addWidget(self.business_hours_text_input)
+
         self._refresh_side_attention_info()
 
         btn_save = QPushButton("Listo")
         btn_save.setObjectName("PrimaryBtn")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._save_attention_panel)
-        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
 
         return page
@@ -537,31 +881,110 @@ class AddAccountDialog(QDialog):
         csv_name = os.path.basename(self.csv_path) if self.csv_path else 'Sin catálogo cargado'
         self.side_catalog_info.setText(f"Archivo actual: {csv_name}")
 
+    def _save_catalog_panel(self):
+        self.current_state['inventory_path'] = self.csv_path
+        self._refresh_side_catalog_info()
+        self._update_status_cards()
+        self._close_side_panel()
+        self._show_save_notification()
+
     def _refresh_side_attention_info(self):
         if hasattr(self, 'start_time') and hasattr(self, 'end_time'):
-            self.side_attention_info.setText(f"Horario actual: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
+            self.side_attention_info.setText(f"Horario de trabajo del bot: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
         else:
             self.side_attention_info.setText("Activo 24/7")
 
     def _save_finance_panel(self):
-        self.config_country = self.side_country_combo.currentText()
-        self.config_language = self.side_language_input.text().strip() or self.config_language
-        self.config_exchange = self.side_exchange_input.text().strip() or self.config_exchange
-        self.config_payments = self.side_payment_input.toPlainText().strip()
-        self.side_payment_text = self.config_payments
+        methods = [p['method'] for p in self.payment_methods_data]
+        details = {p['method']: p['detail'] for p in self.payment_methods_data}
+
+        # Serializar a texto para que SQLite lo acepte
+        self.current_state['payment_methods'] = json.dumps(methods)
+        self.current_state['payment_method_details'] = json.dumps(details)
+        if hasattr(self, 'txt_currency_symbol'):
+            self.current_state['currency_symbol'] = self.txt_currency_symbol.text().strip()
+
         self._update_status_cards()
-        self.toggle_side_panel(False)
+        self._close_side_panel()
+        self._show_save_notification()
+
+    def _add_payment_chip(self):
+        method = self.cmb_payment.currentText().strip()
+        if not method or any(p['method'] == method for p in self.payment_methods_data):
+            return
+
+        idx = self.payment_stack.currentIndex()
+        detail = ""
+
+        if idx == 0:  # Pago Móvil
+            detail = f"Banco: {self.txt_pm_banco.text().strip()} | CI: {self.txt_pm_ci.text().strip()} | Telf: {self.txt_pm_telf.text().strip()}"
+            self.txt_pm_banco.clear(); self.txt_pm_ci.clear(); self.txt_pm_telf.clear()
+        elif idx == 1:  # Zelle
+            detail = f"Correo: {self.txt_zelle_correo.text().strip()} | Titular: {self.txt_zelle_nombre.text().strip()}"
+            self.txt_zelle_correo.clear(); self.txt_zelle_nombre.clear()
+        elif idx == 2:  # Transferencia
+            detail = f"Banco: {self.txt_transf_banco.text().strip()} | Cta: {self.txt_transf_cuenta.text().strip()} | CI/RIF: {self.txt_transf_ci.text().strip()}"
+            self.txt_transf_banco.clear(); self.txt_transf_cuenta.clear(); self.txt_transf_ci.clear()
+        else:  # Genérico
+            detail = self.txt_pago_generico.text().strip()
+            self.txt_pago_generico.clear()
+
+        self._create_chip(method, detail)
+        self.cmb_payment.clearEditText()
+
+    def _create_chip(self, method, detail):
+        self.payment_methods_data.append({'method': method, 'detail': detail})
+        chip = QWidget()
+        chip.setMaximumWidth(300)
+        chip.setStyleSheet("background-color: rgba(0, 229, 255, 0.1); border: 1px solid #00E5FF; border-radius: 12px;")
+        clayout = QHBoxLayout(chip)
+        clayout.setContentsMargins(10, 4, 10, 4)
+        
+        lbl = QLabel(f"{method}: {detail}" if detail else method)
+        lbl.setStyleSheet("color: #00E5FF; font-size: 11px; border: none; background: transparent;")
+        
+        btn_rm = QPushButton("✕")
+        btn_rm.setStyleSheet("color: #FF5555; font-weight: bold; border: none; background: transparent;")
+        btn_rm.clicked.connect(lambda _, w=chip, m=method: self._remove_chip(w, m))
+        
+        clayout.addWidget(lbl)
+        clayout.addWidget(btn_rm)
+        self.chips_layout.addWidget(chip)
+
+    def _remove_chip(self, widget, method):
+        self.chips_layout.removeWidget(widget)
+        widget.deleteLater()
+        self.payment_methods_data = [p for p in self.payment_methods_data if p['method'] != method]
 
     def _save_faq_panel(self):
         self.config_faq = self.side_faq_text.toPlainText().strip()
         self.side_faq_text.setPlainText(self.config_faq)
+        self.current_state['info_eventos'] = self.config_faq
         self._update_status_cards()
-        self.toggle_side_panel(False)
+        self._close_side_panel()
+        self._show_save_notification()
 
     def _save_attention_panel(self):
+        if hasattr(self, 'start_time') and hasattr(self, 'end_time'):
+            self.current_state['start_time'] = self.start_time.time().toString('HH:mm')
+            self.current_state['end_time'] = self.end_time.time().toString('HH:mm')
+        if hasattr(self, 'business_hours_text_input'):
+            self.current_state['business_hours_text'] = self.business_hours_text_input.text().strip()
+        if hasattr(self, 'business_day_checkboxes'):
+            self.current_state['business_days'] = [day for day, chk in self.business_day_checkboxes.items() if chk.isChecked()]
         self._refresh_side_attention_info()
         self._update_status_cards()
-        self.toggle_side_panel(False)
+        self._close_side_panel()
+        self._show_save_notification()
+
+    def _save_info_panel(self):
+        self.current_state['whatsapp_number'] = self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else self.current_state.get('whatsapp_number', '')
+        self.current_state['location'] = self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else self.current_state.get('location', '')
+        self.current_state['website'] = self.txt_website.text().strip() if hasattr(self, 'txt_website') else self.current_state.get('website', '')
+        self.current_state['envios'] = self.txt_envios.text().strip() if hasattr(self, 'txt_envios') else self.current_state.get('envios', '')
+        self._update_status_cards()
+        self._close_side_panel()
+        self._show_save_notification()
 
     def _create_status_card(self, title, status_label, button_text, callback):
         frame = QFrame()
@@ -590,7 +1013,7 @@ class AddAccountDialog(QDialog):
         button.setObjectName("PrimaryBtn")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.clicked.connect(callback)
-        button.setFixedWidth(110)
+        button.setMinimumWidth(110)
         card_layout.addWidget(button)
 
         return frame
@@ -599,14 +1022,23 @@ class AddAccountDialog(QDialog):
         mapping = {
             "Finanzas": 0,
             "Catálogo": 1,
-            "Atención": 2,
-            "Conocimiento": 3,
+            "Información": 2,
+            "Atención": 3,
+            "Conocimiento": 4,
+            "test_chat": 5,
         }
         if section == "Finanzas":
             self.side_country_combo.setCurrentText(self.config_country)
             self.side_language_input.setText(self.config_language)
-            self.side_exchange_input.setText(self.config_exchange)
-            self.side_payment_input.setPlainText(self.config_payments)
+        elif section == "Información":
+            if hasattr(self, 'txt_whatsapp'):
+                self.txt_whatsapp.setText(self.txt_whatsapp.text().strip())
+            if hasattr(self, 'txt_ubicacion'):
+                self.txt_ubicacion.setText(self.txt_ubicacion.text().strip())
+            if hasattr(self, 'txt_website'):
+                self.txt_website.setText(self.txt_website.text().strip())
+            if hasattr(self, 'txt_envios'):
+                self.txt_envios.setText(self.txt_envios.text().strip())
         elif section == "Conocimiento":
             self.side_faq_text.setPlainText(self.config_faq)
         elif section == "Catálogo":
@@ -614,6 +1046,10 @@ class AddAccountDialog(QDialog):
         elif section == "Atención":
             if hasattr(self, 'start_time') and hasattr(self, 'side_attention_info'):
                 self.side_attention_info.setText(f"Horario actual: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
+        elif section == "test_chat":
+            if hasattr(self, 'test_chat_input'):
+                self.test_chat_input.clear()
+            self._clear_test_chat_history()
 
         index = mapping.get(section, 0)
         self.side_panel_stack.setCurrentIndex(index)
@@ -628,7 +1064,7 @@ class AddAccountDialog(QDialog):
         if hasattr(self, 'finance_status_label'):
             self.finance_status_label.setText(
                 self._truncate_status_text(
-                    f"{self.config_country} - {self.config_language} - Tasa: {self.config_exchange}",
+                    f"{self.config_country} - {self.config_language}",
                     max_length=52
                 )
             )
@@ -646,6 +1082,14 @@ class AddAccountDialog(QDialog):
             if hasattr(self, 'attention_status_label'):
                 self.attention_status_label.setText("Activo 24/7")
 
+        if hasattr(self, 'info_status_label'):
+            whatsapp = self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else ''
+            location = self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else ''
+            website = self.txt_website.text().strip() if hasattr(self, 'txt_website') else ''
+            shipping = self.txt_envios.text().strip() if hasattr(self, 'txt_envios') else ''
+            info_summary = whatsapp or location or website or shipping or 'Sin información configurada'
+            self.info_status_label.setText(self._truncate_status_text(info_summary, max_length=52))
+
         rules = len([line for line in self.config_faq.splitlines() if line.strip()])
         if hasattr(self, 'faq_status_label'):
             self.faq_status_label.setText(self._truncate_status_text(f"{rules} reglas configuradas", max_length=52))
@@ -659,12 +1103,44 @@ class AddAccountDialog(QDialog):
         if self.side_panel_container.width() == 0:
             self.side_panel_container.setVisible(False)
 
+    def _refresh_wizard_buttons(self):
+        index = self.stacked.currentIndex()
+        self.footer_prev.setEnabled(index > 0 and not (self.is_edit_mode and index == 1))
+        self.footer.setVisible(index != 0)
+        self.footer_next.setText("Finalizar Configuración" if index == self.stacked.count() - 1 else "Siguiente")
+
     def toggle_side_panel(self, show=True):
-        self.side_panel_container.setVisible(True)
+        if show:
+            if hasattr(self, 'stacked'):
+                self.stacked.setEnabled(False)
+            self.side_panel_container.setVisible(True)
+            self.side_panel_animation.stop()
+            self.side_panel_animation.setStartValue(self.side_panel_container.width())
+            self.side_panel_animation.setEndValue(270)
+            self.side_panel_animation.start()
+        else:
+            if self.side_panel_container.width() == 0:
+                self.side_panel_container.setVisible(False)
+                return
+            self.side_panel_animation.stop()
+            self.side_panel_animation.setStartValue(self.side_panel_container.width())
+            self.side_panel_animation.setEndValue(0)
+            self.side_panel_animation.start()
+
+    def _close_side_panel(self):
         self.side_panel_animation.stop()
-        self.side_panel_animation.setStartValue(self.side_panel_container.width())
-        self.side_panel_animation.setEndValue(300 if show else 0)
-        self.side_panel_animation.start()
+        self.side_panel_container.setVisible(False)
+        self.side_panel_container.setMinimumWidth(0)
+        if hasattr(self, 'test_chat_input'):
+            self.test_chat_input.clear()
+        self._clear_test_chat_history()
+        if hasattr(self, 'stacked'):
+            self.stacked.setEnabled(True)
+            self.stacked.setFocus()
+        self._refresh_wizard_buttons()
+
+    def _show_save_notification(self):
+        QMessageBox.information(self, "Datos guardados", "Se guardaron los datos correctamente.")
 
     def _rotate_spinner(self):
         self.spinner_angle = (self.spinner_angle + 12) % 360
@@ -716,6 +1192,14 @@ class AddAccountDialog(QDialog):
             self.btn_validate.setVisible(False)
             self.page1_status.setText("Modo edición: valida no es necesario.")
 
+    def _toggle_password_visibility(self):
+        if self.pass_input.echoMode() == QLineEdit.EchoMode.Password:
+            self.pass_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.btn_eye.setText("🔒")
+        else:
+            self.pass_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.btn_eye.setText("👁️")
+
     def _build_page2(self):
         layout = QVBoxLayout(self.page2)
         layout.setSpacing(12)
@@ -735,31 +1219,59 @@ class AddAccountDialog(QDialog):
         self.store_input.setPlaceholderText("Nombre del negocio")
         layout.addWidget(self.store_input)
 
-        assistant_label = QLabel("¿Cómo se llama tu asistente? (Ej: Carlos, Sofía)")
+        assistant_group = QWidget()
+        assistant_group_layout = QHBoxLayout(assistant_group)
+        assistant_group_layout.setContentsMargins(0, 0, 0, 0)
+        assistant_group_layout.setSpacing(14)
+        assistant_group_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        assistant_field = QWidget()
+        assistant_field_layout = QVBoxLayout(assistant_field)
+        assistant_field_layout.setContentsMargins(0, 0, 0, 0)
+        assistant_field_layout.setSpacing(4)
+        assistant_field_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        assistant_label = QLabel("¿Cómo se llama tu asistente?")
         assistant_label.setProperty("class", "QuestionLabel")
         assistant_label.setStyleSheet("margin-top: 4px; margin-bottom: 4px; color: #8ea1b8; font-size: 12px;")
-        layout.addWidget(assistant_label)
+        assistant_field_layout.addWidget(assistant_label)
 
         self.assistant_name_input = QLineEdit()
         self.assistant_name_input.setPlaceholderText("Ej: Carlos, Sofía")
-        self.assistant_name_input.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); color: #FFFFFF; font-size: 14px; padding: 10px 10px; border: none; border-bottom: 1px solid #333333; border-radius: 4px 4px 0 0;")
-        layout.addWidget(self.assistant_name_input)
+        self.assistant_name_input.setStyleSheet("background: #1A1A1A; color: #FFFFFF; font-size: 14px; padding: 10px 10px; border: none; border-bottom: 1px solid #444444; border-radius: 4px 4px 0 0;")
+        self.assistant_name_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.assistant_name_input.setMinimumHeight(46)
+        self.assistant_name_input.setFixedHeight(46)
+        assistant_field_layout.addWidget(self.assistant_name_input)
+
+        business_field = QWidget()
+        business_field_layout = QVBoxLayout(business_field)
+        business_field_layout.setContentsMargins(0, 0, 0, 0)
+        business_field_layout.setSpacing(4)
+        business_field_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.business_type_label = QLabel("Tipo de negocio")
         self.business_type_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.business_type_label)
+        self.business_type_label.setStyleSheet("margin-top: 4px; margin-bottom: 4px; color: #8ea1b8; font-size: 12px;")
+        business_field_layout.addWidget(self.business_type_label)
+
         self.business_type_combo = QComboBox()
         self.business_type_combo.setObjectName("BusinessTypeCombo")
         self.business_type_combo.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.business_type_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.business_type_combo.setMinimumHeight(42)
+        self.business_type_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.business_type_combo.setMinimumHeight(46)
+        self.business_type_combo.setFixedHeight(46)
         self.business_type_combo.addItems(["Comercio", "Profesional", "Reservas", "Marca Personal", "Corporativo"])
         self.business_type_combo.setStyleSheet(
             "QComboBox { background-color: rgba(255,255,255,0.03); color: #FFFFFF; border: 1px solid #333333; border-radius: 10px; padding: 10px 12px 10px 10px; }"
             "QComboBox::drop-down { border: none; }"
             "QComboBox:focus { outline: none; }"
         )
-        layout.addWidget(self.business_type_combo)
+        business_field_layout.addWidget(self.business_type_combo)
+
+        assistant_group_layout.addWidget(assistant_field)
+        assistant_group_layout.addWidget(business_field)
+        layout.addWidget(assistant_group)
 
         mission_label = QLabel("Misión del bot")
         mission_label.setProperty("class", "QuestionLabel")
@@ -867,6 +1379,7 @@ class AddAccountDialog(QDialog):
         self.catalog_status_label = QLabel("")
         self.attention_status_label = QLabel("")
         self.faq_status_label = QLabel("")
+        self.info_status_label = QLabel("")
 
         layout.addWidget(self._create_status_card(
             "Finanzas y Moneda",
@@ -879,6 +1392,12 @@ class AddAccountDialog(QDialog):
             self.catalog_status_label,
             "Gestionar",
             lambda: self._open_side_panel_section("Catálogo")
+        ))
+        layout.addWidget(self._create_status_card(
+            "Información y Direcciones",
+            self.info_status_label,
+            "Editar",
+            lambda: self._open_side_panel_section("Información")
         ))
         layout.addWidget(self._create_status_card(
             "Atención y Horarios",
@@ -934,154 +1453,132 @@ class AddAccountDialog(QDialog):
         for key in ["Categoría", "Nicho", "Productos/Servicios", "Tono", "Ubicación"]:
             self._edit_aspect(key)
 
-    def _apply_chip(self, text):
-        current = self.custom_training_input.toPlainText().strip()
-        if current:
-            current += "\n"
-        self.custom_training_input.setPlainText(current + text)
-
-    def _build_page5(self):
-        layout = QVBoxLayout(self.page5)
+    def _create_info_panel_page(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
         layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("Configuración fija de IA")
+        title = QLabel("Información y Direcciones")
         title.setObjectName("StepTitle")
         layout.addWidget(title)
 
-        subtitle = QLabel("Define la información clave que el asistente siempre debe conocer para evitar respuestas como 'no sé'.")
+        subtitle = QLabel("Configura el contacto, la dirección, el sitio web, envíos y la información clave que el asistente debe conocer.")
         subtitle.setObjectName("StepSubtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
         self.txt_whatsapp_label = QLabel("¿A qué WhatsApp enviamos a los clientes (Ventas complejas)?")
         self.txt_whatsapp_label.setProperty("class", "QuestionLabel")
+        self.txt_whatsapp_label.setWordWrap(True)
         layout.addWidget(self.txt_whatsapp_label)
 
         self.txt_whatsapp = QLineEdit()
         self.txt_whatsapp.setPlaceholderText("+58...")
+        self.txt_whatsapp.setMaximumWidth(300)
         layout.addWidget(self.txt_whatsapp)
 
         self.txt_ubicacion_label = QLabel("¿Dónde está ubicado tu negocio?")
         self.txt_ubicacion_label.setProperty("class", "QuestionLabel")
+        self.txt_ubicacion_label.setWordWrap(True)
         layout.addWidget(self.txt_ubicacion_label)
 
         self.txt_ubicacion = QLineEdit()
         self.txt_ubicacion.setPlaceholderText("Ej: Local 4, Centro Comercial X. (O 'Solo tienda virtual')")
+        self.txt_ubicacion.setMaximumWidth(300)
         layout.addWidget(self.txt_ubicacion)
 
         self.txt_website_label = QLabel("¿Tienes sitio web o catálogo online?")
         self.txt_website_label.setProperty("class", "QuestionLabel")
+        self.txt_website_label.setWordWrap(True)
         layout.addWidget(self.txt_website_label)
 
         self.txt_website = QLineEdit()
         self.txt_website.setPlaceholderText("Ej: https://miempresa.com")
+        self.txt_website.setMaximumWidth(300)
         layout.addWidget(self.txt_website)
 
         self.location_frame = QFrame()
         self.location_frame.setStyleSheet("background-color: rgba(255, 255, 255, 0.02); border: 1px solid #222222; border-radius: 16px;")
+        self.location_frame.setMaximumWidth(250)
         location_layout = QVBoxLayout(self.location_frame)
         location_layout.setContentsMargins(16, 16, 16, 16)
         location_layout.setSpacing(14)
 
         self.txt_country_label = QLabel("¿En qué país opera tu negocio?")
         self.txt_country_label.setProperty("class", "QuestionLabel")
+        self.txt_country_label.setWordWrap(True)
         location_layout.addWidget(self.txt_country_label)
         self.txt_country = QLineEdit()
         self.txt_country.setPlaceholderText("Ej: Venezuela")
+        self.txt_country.setMaximumWidth(280)
         self.txt_country.addAction(qta.icon('fa5s.globe', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
         location_layout.addWidget(self.txt_country)
 
         self.txt_language_label = QLabel("¿Cuál es el idioma principal de atención?")
         self.txt_language_label.setProperty("class", "QuestionLabel")
+        self.txt_language_label.setWordWrap(True)
         location_layout.addWidget(self.txt_language_label)
         self.txt_language = QLineEdit()
         self.txt_language.setPlaceholderText("Ej: es")
+        self.txt_language.setMaximumWidth(280)
         self.txt_language.addAction(qta.icon('fa5s.language', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
         location_layout.addWidget(self.txt_language)
 
         self.txt_currency_symbol_label = QLabel("¿Cuál es el símbolo de tu moneda?")
         self.txt_currency_symbol_label.setProperty("class", "QuestionLabel")
+        self.txt_currency_symbol_label.setWordWrap(True)
         location_layout.addWidget(self.txt_currency_symbol_label)
         self.txt_currency_symbol = QLineEdit()
         self.txt_currency_symbol.setPlaceholderText("Ej: Bs")
+        self.txt_currency_symbol.setMaximumWidth(280)
         self.txt_currency_symbol.addAction(qta.icon('fa5s.money-bill-wave', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
         location_layout.addWidget(self.txt_currency_symbol)
-
-        self.txt_tasa_cambio_label = QLabel("¿Cuál es tu tasa de cambio preferida?")
-        self.txt_tasa_cambio_label.setProperty("class", "QuestionLabel")
-        location_layout.addWidget(self.txt_tasa_cambio_label)
-        self.txt_tasa_cambio = QLineEdit()
-        self.txt_tasa_cambio.setPlaceholderText("Ej: 1 USD = 3.600.000 Bs")
-        self.txt_tasa_cambio.addAction(qta.icon('fa5s.exchange-alt', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
-        location_layout.addWidget(self.txt_tasa_cambio)
 
         layout.addWidget(self.location_frame)
 
         self.txt_envios_label = QLabel("¿Cómo manejas los envíos o el delivery?")
         self.txt_envios_label.setProperty("class", "QuestionLabel")
+        self.txt_envios_label.setWordWrap(True)
         layout.addWidget(self.txt_envios_label)
 
         self.txt_envios = QLineEdit()
         self.txt_envios.setPlaceholderText("Ej: Delivery gratis en el centro, $3 a otras zonas.")
+        self.txt_envios.setMaximumWidth(300)
         layout.addWidget(self.txt_envios)
 
-        payment_label = QLabel("¿Qué métodos de pago aceptas?")
-        payment_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(payment_label)
-
-        payment_row = QHBoxLayout()
-        payment_row.setSpacing(10)
-        payment_row.setContentsMargins(0, 0, 0, 0)
-        self.payment_buttons = []
-        for method in ["Pago Móvil", "Zelle", "Binance", "Efectivo"]:
-            payment_btn = QPushButton(method)
-            payment_btn.setCheckable(True)
-            payment_btn.setChecked(True)
-            payment_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            payment_btn.setProperty("class", "PaymentTag")
-            payment_btn.setFixedHeight(34)
-            payment_row.addWidget(payment_btn)
-            self.payment_buttons.append(payment_btn)
-
-        layout.addLayout(payment_row)
-
-        self.txt_info_eventos_label = QLabel("¿Tienes Lives, eventos o promociones especiales?")
+        self.txt_info_eventos_label = QLabel("¿Tienes Lives, eventos, promociones o información adicional para el asistente?")
         self.txt_info_eventos_label.setProperty("class", "QuestionLabel")
+        self.txt_info_eventos_label.setWordWrap(True)
         layout.addWidget(self.txt_info_eventos_label)
 
         self.txt_info_eventos = QTextEdit()
-        self.txt_info_eventos.setPlaceholderText("Ej: Lives los viernes, descuentos en eventos especiales, reservaciones por WhatsApp.")
+        self.txt_info_eventos.setPlaceholderText("Ej: Lives los viernes, descuentos especiales, reservaciones por WhatsApp y directrices de atención como ser amable y mencionar envíos.")
         self.txt_info_eventos.setFixedHeight(80)
-        self.txt_info_eventos.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); border: 1px solid #222222; border-radius: 10px; color: #FFFFFF;")
+        self.txt_info_eventos.setMaximumWidth(300)
+        self.txt_info_eventos.setStyleSheet("background: #1A1A1A; border: none; border-bottom: 1px solid #444444; border-radius: 10px; color: #FFFFFF;")
         layout.addWidget(self.txt_info_eventos)
-
-        self.custom_training_label = QLabel("Instrucciones adicionales para el asistente")
-        self.custom_training_label.setProperty("class", "QuestionLabel")
-        layout.addWidget(self.custom_training_label)
-        self.custom_training_input = QTextEdit()
-        self.custom_training_input.setPlaceholderText("Ej: Atiende con amabilidad, ofrece descuentos en paquetes y siempre menciona el envío.")
-        self.custom_training_input.setMinimumHeight(100)
-        self.custom_training_input.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); border: 1px solid #222222; border-radius: 10px; color: #FFFFFF;")
-        layout.addWidget(self.custom_training_input)
 
         self.page5_status = QLabel("Define las reglas operativas antes de continuar al resumen final.")
         self.page5_status.setStyleSheet("color: #a5b1c2; margin-top: 8px;")
         layout.addWidget(self.page5_status)
 
-        self.btn_finalizar = QPushButton("Ver resumen final")
-        self.btn_finalizar.setObjectName("PrimaryBtn")
-        self.btn_finalizar.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_finalizar.setMaximumWidth(240)
-        self.btn_finalizar.clicked.connect(self.goto_summary)
+        btn_save = QPushButton("Listo")
+        btn_save.setObjectName("PrimaryBtn")
+        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save.setMaximumWidth(240)
+        btn_save.clicked.connect(self._save_info_panel)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        btn_row.addWidget(self.btn_finalizar)
+        btn_row.addWidget(btn_save)
+        btn_row.addStretch()
         layout.addLayout(btn_row)
 
         layout.addStretch()
+
+        return page
 
     def _build_page6(self):
         layout = QVBoxLayout(self.page6)
@@ -1089,68 +1586,97 @@ class AddAccountDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        title = QLabel("Resumen y Prueba de Agente")
-        title.setObjectName("StepTitle")
-        layout.addWidget(title)
-
-        subtitle = QLabel("Revisa la configuración y haz una prueba rápida con el asistente.")
-        subtitle.setObjectName("StepSubtitle")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
-
-        self.summary_display = QTextEdit()
-        self.summary_display.setReadOnly(True)
-        self.summary_display.setMinimumHeight(220)
-        self.summary_display.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); color: #FFFFFF;")
-        layout.addWidget(self.summary_display)
-
-        self.summary_note = QLabel(
-            "La configuración interna del asistente se genera y guarda de forma segura. "
-            "Aquí ves solo lo esencial para revisar antes de activar."
+        card = QFrame()
+        card.setStyleSheet(
+            "background-color: #121212;"
+            "border-radius: 12px;"
+            "border: 1px solid #333333;"
         )
-        self.summary_note.setWordWrap(True)
-        self.summary_note.setStyleSheet("color: #777777; font-size: 12px;")
-        layout.addWidget(self.summary_note)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(18)
 
-        input_row = QHBoxLayout()
-        self.preview_input = QLineEdit()
-        self.preview_input.setPlaceholderText("Escribe una pregunta para probar al agente...")
-        input_row.addWidget(self.preview_input)
+        title = QLabel("Configuración Lista")
+        title.setStyleSheet("color: #FFFFFF; font-size: 24px; font-weight: bold;")
+        card_layout.addWidget(title)
 
-        self.btn_preview = QPushButton("Probar agente")
-        self.btn_preview.setObjectName("PrimaryBtn")
-        self.btn_preview.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_preview.clicked.connect(self.test_agent_response)
-        input_row.addWidget(self.btn_preview)
-        layout.addLayout(input_row)
+        subtitle = QLabel("Tu configuración está lista. Prueba al asistente antes de finalizar para asegurarte de que todo está en orden.")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("color: #A0A0A0; font-size: 13px;")
+        card_layout.addWidget(subtitle)
 
-        self.btn_random_prompt = QPushButton("Usar pregunta aleatoria")
-        self.btn_random_prompt.setObjectName("FlatBtn")
-        self.btn_random_prompt.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_random_prompt.clicked.connect(self.use_random_preview_prompt)
-        layout.addWidget(self.btn_random_prompt)
+        def build_info_cell(icon_name, title_text, value_label):
+            cell = QFrame()
+            cell.setStyleSheet(
+                "QFrame {"
+                "background-color: rgba(255,255,255,0.03);"
+                "border-radius: 14px;"
+                "}"
+            )
+            cell_layout = QHBoxLayout(cell)
+            cell_layout.setContentsMargins(14, 12, 14, 12)
+            cell_layout.setSpacing(12)
 
-        self.preview_output = QTextEdit()
-        self.preview_output.setReadOnly(True)
-        self.preview_output.setMinimumHeight(160)
-        self.preview_output.setStyleSheet("background-color: rgba(255, 255, 255, 0.03); color: #FFFFFF;")
-        layout.addWidget(self.preview_output)
+            icon = QLabel()
+            icon.setPixmap(qta.icon(icon_name, color='#00E5FF').pixmap(20, 20))
+            icon.setFixedSize(22, 22)
+            cell_layout.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.page6_status = QLabel("Revisa todo antes de guardar y prueba el estilo de respuesta.")
-        self.page6_status.setStyleSheet("color: #a5b1c2; margin-top: 8px;")
-        layout.addWidget(self.page6_status)
+            text_container = QWidget()
+            text_layout = QVBoxLayout(text_container)
+            text_layout.setContentsMargins(0, 0, 0, 0)
+            text_layout.setSpacing(4)
 
-        self.btn_finalize_save = QPushButton("Finalizar y activar bot")
-        self.btn_finalize_save.setObjectName("PrimaryBtn")
-        self.btn_finalize_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_finalize_save.setMaximumWidth(240)
-        self.btn_finalize_save.clicked.connect(self.finish_and_save)
+            title = QLabel(title_text)
+            title.setStyleSheet("color: #FFFFFF; font-size: 12px; font-weight: bold;")
+            value_label.setStyleSheet("color: #A0A0A0; font-size: 13px;")
+            value_label.setWordWrap(True)
 
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        btn_row.addWidget(self.btn_finalize_save)
-        layout.addLayout(btn_row)
+            text_layout.addWidget(title)
+            text_layout.addWidget(value_label)
+            cell_layout.addWidget(text_container)
+            return cell
 
+        self.lbl_resumen_nombre = QLabel(self.assistant_name_input.text().strip() or "No asignado")
+        self.lbl_resumen_mision = QLabel(self.mission_selected)
+        start_time_label = self.start_time.time().toString('HH:mm') if hasattr(self, 'start_time') else '08:00'
+        end_time_label = self.end_time.time().toString('HH:mm') if hasattr(self, 'end_time') else '18:00'
+        self.lbl_resumen_horario = QLabel(f"{start_time_label} - {end_time_label}")
+        self.lbl_resumen_pais = QLabel(self.txt_country.text().strip() if hasattr(self, 'txt_country') else 'No definido')
+        self.lbl_resumen_tipo = QLabel(self.business_type_combo.currentText() if hasattr(self, 'business_type_combo') else 'No definido')
+        inventory_status = os.path.basename(self.csv_path) if self.csv_path else "No cargado"
+        self.lbl_resumen_inventario = QLabel(inventory_status)
+
+        grid = QGridLayout()
+        grid.setSpacing(16)
+        grid.addWidget(build_info_cell('fa5s.user', 'Nombre', self.lbl_resumen_nombre), 0, 0)
+        grid.addWidget(build_info_cell('fa5s.lightbulb', 'Misión', self.lbl_resumen_mision), 0, 1)
+        grid.addWidget(build_info_cell('fa5s.clock', 'Horario', self.lbl_resumen_horario), 0, 2)
+        grid.addWidget(build_info_cell('fa5s.globe', 'País', self.lbl_resumen_pais), 1, 0)
+        grid.addWidget(build_info_cell('fa5s.store', 'Tipo', self.lbl_resumen_tipo), 1, 1)
+        grid.addWidget(build_info_cell('fa5s.boxes', 'Inventario', self.lbl_resumen_inventario), 1, 2)
+        card_layout.addLayout(grid)
+
+        self.btn_open_test_chat = QPushButton("Probar Configuración")
+        self.btn_open_test_chat.setObjectName("PrimaryBtn")
+        self.btn_open_test_chat.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_open_test_chat.setStyleSheet(
+            "QPushButton {"
+            "background-color: #00E5FF;"
+            "color: #000000;"
+            "border-radius: 20px;"
+            "padding: 12px 18px;"
+            "font-weight: bold;"
+            "}"
+            "QPushButton:hover {"
+            "background-color: #00C4E5;"
+            "}"
+        )
+        self.btn_open_test_chat.setMaximumWidth(300)
+        self.btn_open_test_chat.clicked.connect(lambda: self._open_side_panel_section("test_chat"))
+        card_layout.addWidget(self.btn_open_test_chat, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addWidget(card)
         layout.addStretch()
 
     def goto_summary(self):
@@ -1161,7 +1687,25 @@ class AddAccountDialog(QDialog):
         self.stacked.setCurrentIndex(self.stacked.count() - 1)
 
     def load_summary_page(self):
+        self.get_data()
         self.update_role_logic()
+        data = self.current_state
+
+        self.lbl_resumen_nombre.setText(data.get('bot_name', 'No asignado'))
+        self.lbl_resumen_mision.setText(data.get('bot_mission', 'No definida'))
+        self.lbl_resumen_horario.setText(f"{data.get('start_time', '08:00')} - {data.get('end_time', '18:00')}")
+        self.lbl_resumen_pais.setText(data.get('country', 'No definido'))
+        self.lbl_resumen_tipo.setText(self.business_type_combo.currentText() if hasattr(self, 'business_type_combo') else 'No definido')
+
+        inventory_path = data.get('inventory_path', '')
+        if inventory_path:
+            file_name = os.path.basename(inventory_path)
+            self.lbl_resumen_inventario.setText(f"Inventario CSV: {file_name}")
+            self.lbl_resumen_inventario.setStyleSheet("color: #22FF8A;")
+        else:
+            self.lbl_resumen_inventario.setText("Inventario CSV: No cargado")
+            self.lbl_resumen_inventario.setStyleSheet("color: #FF5555;")
+
         self.summary_display.setPlainText(self.get_summary_text())
         if not self.preview_input.text().strip():
             self.preview_input.setPlaceholderText("Escribe o usa una pregunta aleatoria para probar al agente...")
@@ -1169,8 +1713,12 @@ class AddAccountDialog(QDialog):
         self.page6_status.setText("Revisa todo antes de guardar y prueba el estilo de respuesta.")
 
     def get_summary_text(self):
-        payments = [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else []
-        custom = self.custom_training_input.toPlainText().strip() if hasattr(self, 'custom_training_input') else ""
+        payments = [item['method'] for item in self.payment_methods_data] if hasattr(self, 'payment_methods_data') else []
+        payment_details = [
+            f"{item['method']}: {item['detail']}"
+            for item in self.payment_methods_data
+            if item.get('detail')
+        ]
         inventory = "Sí" if self.inventory_connected else "No"
         inventory_info = f"{self.inventory_rows} productos" if self.inventory_connected else "sin inventario"
         assistant = self.assistant_name_input.text().strip() or "No asignado"
@@ -1187,16 +1735,16 @@ class AddAccountDialog(QDialog):
             f"País: {self.txt_country.text().strip() if hasattr(self, 'txt_country') else 'No definido'}",
             f"Idioma: {self.txt_language.text().strip() if hasattr(self, 'txt_language') else 'No definido'}",
             f"Símbolo de moneda: {self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'No definido'}",
-            f"Tasa de cambio: {self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else 'No definida'}",
             f"WhatsApp de contacto: {self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else 'No definido'}",
             f"Métodos de pago: {', '.join(payments) if payments else 'No definidos'}",
-            f"Lives / eventos: {self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else 'No definidos'}",
-            "",
-            "Instrucciones personalizadas del asistente:",
-            custom or "- Sin instrucciones adicionales -",
+        ]
+        if payment_details:
+            summary_lines.append(f"Detalles de pago: {'; '.join(payment_details)}")
+        summary_lines.extend([
+            f"Lives / eventos / FAQ: {self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else 'No definidos'}",
             "",
             "La configuración interna del asistente se guarda en segundo plano y no se muestra directamente aquí.",
-        ]
+        ])
         return "\n".join(summary_lines)
 
     def use_random_preview_prompt(self):
@@ -1210,78 +1758,45 @@ class AddAccountDialog(QDialog):
         self.preview_input.setText(random.choice(examples))
 
     def test_agent_response(self):
-        self.update_role_logic()
-        question = self.preview_input.text().strip()
-        if not question:
-            self.page6_status.setText("Escribe una pregunta para probar al agente.")
+        user_text = self.test_chat_input.text().strip()
+        if not user_text:
             return
-        self.page6_status.setText("Generando respuesta...")
-        self.preview_output.setPlainText("Generando respuesta...")
+
+        self.test_chat_input.clear()
+        self._append_test_chat_message(user_text, sender="user")
+
+        if not hasattr(self, 'test_chat_history'):
+            self.test_chat_history = []
+        self.test_chat_history.append({'role': 'user', 'content': user_text})
+
+        ai_service = AIService()
         try:
-            if hasattr(self.ai_service, 'get_response'):
-                config = {
-                    'country': self.txt_country.text().strip() if hasattr(self, 'txt_country') else 'Venezuela',
-                    'language': self.txt_language.text().strip() if hasattr(self, 'txt_language') else 'es',
-                    'currency_symbol': self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'Bs',
-                    'location': self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
-                    'website': self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
-                    'exchange_rate': self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
-                    'payment_methods': [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
-                    'info_eventos': self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else '',
-                    'bot_name': self.assistant_name_input.text().strip(),
-                    'whatsapp_contacto': self.txt_whatsapp.text().strip(),
-                    'bot_role': self.personality_selected,
-                    'business_profile': f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
-                    'system_prompt': self.hidden_prompt,
-                }
-                inventory_rows = []
-                if self.csv_path and hasattr(self.ai_service, '_load_inventory_rows'):
-                    inventory_rows = self.ai_service._load_inventory_rows(self.csv_path)
-                answer, _ = self.ai_service.get_response(
-                    user_input=question,
-                    config=config,
-                    inventory_rows=inventory_rows,
-                    time_context="CONTINUOUS",
-                    custom_training=self.custom_training_input.toPlainText().strip(),
-                    current_state=config.get('current_state', 'CONSULTA'),
-                    bot_mission=config.get('bot_mission', 'Ventas'),
-                )
-            else:
-                answer = self.ai_service.generate_response(
-                    user_input=question,
-                    system_prompt=self.hidden_prompt,
-                    bot_role=self.personality_selected,
-                    business_profile=f"{self.store_input.text().strip()} - {self.description_input.toPlainText().strip()}",
-                    inventory_path=self.csv_path,
-                    bot_name=self.assistant_name_input.text().strip(),
-                    whatsapp_contacto=self.txt_whatsapp.text().strip(),
-                    location=self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else '',
-                    website=self.txt_website.text().strip() if hasattr(self, 'txt_website') else '',
-                    exchange_rate=self.txt_tasa_cambio.text().strip() if hasattr(self, 'txt_tasa_cambio') else '',
-                    currency_symbol=self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else 'Bs',
-                    payment_methods=[btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
-                    info_eventos=self.txt_info_eventos.toPlainText().strip() if hasattr(self, 'txt_info_eventos') else '',
-                    time_context="CONTINUOUS",
-                    custom_training=self.custom_training_input.toPlainText().strip(),
-                )
-            if answer is None:
-                self.preview_output.setPlainText("No se pudo generar respuesta. Verifica la conexión de IA o la llave activa.")
-            else:
-                self.preview_output.setPlainText(answer)
-                self.page6_status.setText("Prueba completada. Revisa la respuesta y guarda.")
+            config = self.get_data()
+            inventory_path = config.get('inventory_path')
+
+            respuesta, _ = ai_service.get_response(
+                user_input=user_text,
+                config=config,
+                inventory_path=inventory_path,
+                chat_history=self.test_chat_history
+            )
+
+            import re
+            respuesta_limpia = re.sub(r'<DATA>.*?</DATA>', '', respuesta, flags=re.DOTALL).strip()
+            self.test_chat_history.append({'role': 'assistant', 'content': respuesta_limpia})
+            self._append_test_chat_message(respuesta_limpia, sender="assistant")
+
         except Exception as e:
-            self.preview_output.setPlainText(f"Error al generar la respuesta: {e}")
-            self.page6_status.setText("No se pudo generar la prueba de agente.")
+            self._append_test_chat_message(f"Error IA: {str(e)}", sender="assistant")
 
     def on_page_changed(self, index):
         self.footer.setVisible(index != 0)
         self.footer_prev.setEnabled(index > 0)
         if index == self.stacked.count() - 1:
-            self.footer_next.setText("Activar asistente")
+            self.footer_next.setText("Finalizar Configuración")
         last_page = index == self.stacked.count() - 1
-        self.footer_next.setVisible(not last_page)
         if last_page:
-            self.footer_next.setText("Activar asistente")
+            self.footer_next.setText("Finalizar Configuración")
         else:
             self.footer_next.setText("Siguiente")
 
@@ -1298,7 +1813,7 @@ class AddAccountDialog(QDialog):
         elif index == self.stacked.count() - 1:
             self.load_summary_page()
 
-        self.animate_fade()
+        self._refresh_wizard_buttons()
 
     def _load_account_data(self, account_data):
         self.user_input.setText(account_data.get('insta_user', ''))
@@ -1334,19 +1849,27 @@ class AddAccountDialog(QDialog):
             self.txt_language.setText(self.config_language)
         if hasattr(self, 'txt_currency_symbol'):
             self.txt_currency_symbol.setText(account_data.get('currency_symbol', 'Bs'))
-        self.config_exchange = account_data.get('exchange_rate', account_data.get('config_exchange', ''))
-        if hasattr(self, 'txt_tasa_cambio'):
-            self.txt_tasa_cambio.setText(self.config_exchange)
         if hasattr(self, 'txt_envios'):
             self.txt_envios.setText(account_data.get('envios', ''))
         self.config_payments = account_data.get('payment_methods_text', account_data.get('config_payments', ''))
         self.side_payment_text = self.config_payments
-        if hasattr(self, 'side_payment_input'):
-            self.side_payment_input.setPlainText(self.side_payment_text)
-        if hasattr(self, 'payment_buttons'):
-            selected_payments = set(account_data.get('payment_methods', []))
-            for btn in self.payment_buttons:
-                btn.setChecked(btn.text() in selected_payments)
+        if hasattr(self, 'payment_methods_data'):
+            raw_methods = account_data.get('payment_methods', [])
+            raw_details = account_data.get('payment_method_details', {})
+            if isinstance(raw_methods, str):
+                try:
+                    raw_methods = json.loads(raw_methods)
+                except Exception:
+                    raw_methods = []
+            if isinstance(raw_details, str):
+                try:
+                    raw_details = json.loads(raw_details)
+                except Exception:
+                    raw_details = {}
+            self.payment_methods_data = [
+                {'method': method, 'detail': raw_details.get(method, '')}
+                for method in (raw_methods or [])
+            ]
         self.config_faq = account_data.get('info_eventos', account_data.get('config_faq', ''))
         if hasattr(self, 'txt_info_eventos'):
             self.txt_info_eventos.setPlainText(self.config_faq)
@@ -1411,15 +1934,28 @@ class AddAccountDialog(QDialog):
             self.page1_status.setText(message)
 
     def closeEvent(self, event):
-        if self.login_worker and self.login_worker.isRunning():
-            self.login_worker.requestInterruption()
-            self.login_worker.quit()
-            self.login_worker.wait(500)
-        if self.profile_worker and self.profile_worker.isRunning():
-            self.profile_worker.requestInterruption()
-            self.profile_worker.quit()
-            self.profile_worker.wait(500)
-        super().closeEvent(event)
+        reply = QMessageBox.question(
+            self,
+            'Confirmar Salida',
+            '¿Estás seguro de que deseas cerrar el configurador?\n\nLos cambios no guardados se perderán.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.login_worker and self.login_worker.isRunning():
+                self.login_worker.requestInterruption()
+                self.login_worker.quit()
+                self.login_worker.wait(500)
+            if self.profile_worker and self.profile_worker.isRunning():
+                self.profile_worker.requestInterruption()
+                self.profile_worker.quit()
+                self.profile_worker.wait(500)
+            if hasattr(self, 'closed'):
+                self.closed.emit()
+            event.accept()
+        else:
+            event.ignore()
 
     def start_profile_scan(self):
         username = self.user_input.text().strip().lstrip('@')
@@ -1464,21 +2000,41 @@ class AddAccountDialog(QDialog):
 
     def _analyze_inventory_file(self, path):
         try:
-            lower = path.lower()
-            if lower.endswith('.csv'):
+            if not path.lower().endswith(('.csv', '.xlsx', '.xls')):
+                QMessageBox.warning(self, "Formato Inválido", "Por favor selecciona un archivo CSV o Excel válido.")
+                return
+
+            if path.lower().endswith('.csv'):
                 headers, rows = self._read_csv(path)
                 self.inventory_type = 'CSV'
-            elif lower.endswith('.xlsx') or lower.endswith('.xls'):
+            else:
                 headers, rows = self._read_excel(path)
                 self.inventory_type = 'Excel'
-            else:
-                raise ValueError('Formato no soportado. Usa CSV, XLSX o XLS.')
+
+            if not headers or not rows:
+                QMessageBox.warning(self, "Archivo Vacío", "El archivo seleccionado parece estar vacío o dañado.")
+                return
+
+            headers_lower = [str(h).lower() for h in headers]
+            palabras_clave = ["precio", "price", "producto", "product", "nombre"]
+            if not any(palabra in " ".join(headers_lower) for palabra in palabras_clave):
+                QMessageBox.critical(
+                    self,
+                    "Columnas Faltantes",
+                    "¡Cuidado! El archivo no contiene columnas reconocibles de precios o productos.\n\n"
+                    "Asegúrate de que la primera fila del Excel/CSV tenga títulos como 'Producto' o 'Precio_USD'."
+                )
+                return
 
             self.inventory_headers = headers
             self.inventory_rows = len(rows)
+            self.current_state['inventory_path'] = path
             file_name = path.replace('\\', '/').split('/')[-1]
             if hasattr(self, 'catalog_status_label'):
                 self.catalog_status_label.setText(f"✅ {file_name} cargado correctamente")
+            if hasattr(self, 'lbl_file_path'):
+                self.lbl_file_path.setText(file_name)
+                self.lbl_file_path.setStyleSheet("color: #00E5FF;")
             self.page3_status.setText("Catálogo listo. Puedes continuar.")
             self.inventory_connected = True
             self.footer_next.setEnabled(True)
@@ -1647,12 +2203,6 @@ class AddAccountDialog(QDialog):
         if hasattr(self, 'page2_status'):
             self.page2_status.setText(f"Misión seleccionada: {name}")
 
-    def animate_fade(self):
-        animation = QPropertyAnimation(self.fade_effect, b"opacity", self)
-        animation.setDuration(240)
-        animation.setStartValue(0.0)
-        animation.setEndValue(1.0)
-        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def finish_and_save(self):
         self.update_role_logic()
@@ -1668,47 +2218,41 @@ class AddAccountDialog(QDialog):
         self.accept()
 
     def get_data(self):
-        inventory_summary = ", ".join(self.inventory_headers) if self.inventory_headers else "Sin encabezados detectados"
-        personality = self.personality_selected if hasattr(self, 'personality_selected') else "Vendedor Quirúrgico"
-        return {
-            "user": self.user_input.text().strip(),
-            "pass": self.pass_input.text().strip(),
-            "store_name": self.store_input.text().strip(),
-            "description": self.description_input.toPlainText().strip(),
-            "business_name": self.store_input.text().strip(),
-            "assistant_name": self.assistant_name_input.text().strip() if hasattr(self, 'assistant_name_input') else "",
-            "business_data": self.description_input.toPlainText().strip(),
-            "bot_role": personality,
-            "structured_identity": {
-                "name": self.store_input.text().strip(),
-                "bio": self.description_input.toPlainText().strip(),
-                "style": personality,
-            },
-            "inventory_path": self.csv_path,
-            "inventory_connected": self.inventory_connected,
-            "inventory_metadata": {
-                "headers": self.inventory_headers,
-                "summary": inventory_summary,
-            },
-            "inventory_rows": self.inventory_rows,
-            "type": self.business_type_combo.currentText() if hasattr(self, 'business_type_combo') else personality,
-            "start": self.start_time.time().toString("HH:mm") if hasattr(self, 'start_time') else "08:00",
-            "end": self.end_time.time().toString("HH:mm") if hasattr(self, 'end_time') else "18:00",
-            "proxy": "Auto",
-            "prompt": self.custom_training_input.toPlainText().strip() if hasattr(self, 'custom_training_input') else "",
-            "security_level": "High",
-            "system_prompt_final": self.hidden_prompt,
-            "whatsapp_number": self.txt_whatsapp.text().strip() if hasattr(self, 'txt_whatsapp') else "",
-            "country": self.config_country,
-            "language": self.config_language,
-            "currency_symbol": self.txt_currency_symbol.text().strip() if hasattr(self, 'txt_currency_symbol') else "Bs",
-            "location": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
-            "website": self.txt_website.text().strip() if hasattr(self, 'txt_website') else "",
-            "exchange_rate": self.config_exchange,
-            "ubicacion": self.txt_ubicacion.text().strip() if hasattr(self, 'txt_ubicacion') else "",
-            "envios": self.txt_envios.text().strip() if hasattr(self, 'txt_envios') else "",
-            "bot_mission": self.mission_selected if hasattr(self, 'mission_selected') else "Ventas",
-            "payment_methods": [btn.text() for btn in self.payment_buttons if btn.isChecked()] if hasattr(self, 'payment_buttons') else [],
-            "payment_methods_text": self.config_payments,
-            "info_eventos": self.config_faq,
-        }
+        if hasattr(self, 'user_input') and self.user_input.text().strip():
+            self.current_state['insta_user'] = self.user_input.text().strip()
+        if hasattr(self, 'pass_input') and self.pass_input.text().strip():
+            self.current_state['insta_pass'] = self.pass_input.text().strip()
+        if hasattr(self, 'store_input'):
+            self.current_state['store_name'] = self.store_input.text().strip()
+        if hasattr(self, 'description_input'):
+            self.current_state['description'] = self.description_input.toPlainText().strip()
+        if hasattr(self, 'assistant_name_input'):
+            self.current_state['bot_name'] = self.assistant_name_input.text().strip() or self.current_state.get('bot_name', 'Pegasus')
+        if hasattr(self, 'mission_selected'):
+            self.current_state['bot_mission'] = self.mission_selected
+        if hasattr(self, 'personality_selected'):
+            self.current_state['bot_role'] = self.personality_selected
+        if hasattr(self, 'csv_path'):
+            self.current_state['inventory_path'] = self.csv_path
+        if hasattr(self, 'start_time'):
+            self.current_state['start_time'] = self.start_time.time().toString('HH:mm')
+        if hasattr(self, 'end_time'):
+            self.current_state['end_time'] = self.end_time.time().toString('HH:mm')
+        if hasattr(self, 'txt_whatsapp'):
+            self.current_state['whatsapp_number'] = self.txt_whatsapp.text().strip()
+        if hasattr(self, 'txt_ubicacion'):
+            self.current_state['location'] = self.txt_ubicacion.text().strip()
+        if hasattr(self, 'txt_website'):
+            self.current_state['website'] = self.txt_website.text().strip()
+        if hasattr(self, 'txt_envios'):
+            self.current_state['envios'] = self.txt_envios.text().strip()
+        if hasattr(self, 'side_country_combo'):
+            self.current_state['country'] = self.side_country_combo.currentText()
+        if hasattr(self, 'side_language_input'):
+            self.current_state['language'] = self.side_language_input.text().strip() or self.current_state.get('language', 'Español')
+        if hasattr(self, 'business_hours_text_input'):
+            self.current_state['business_hours_text'] = self.business_hours_text_input.text().strip()
+        if hasattr(self, 'business_day_checkboxes'):
+            self.current_state['business_days'] = [day for day, chk in self.business_day_checkboxes.items() if chk.isChecked()]
+        self.current_state['system_prompt_final'] = getattr(self, 'hidden_prompt', self.current_state.get('system_prompt', ''))
+        return self.current_state

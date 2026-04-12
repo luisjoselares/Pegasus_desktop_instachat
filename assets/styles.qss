@@ -55,7 +55,6 @@ QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#Instagram
     color: #FFFFFF;
     background-color: #1A1A1A;
     border-left: 4px solid #00E5FF;
-    font-weight: 800;
 }
 
 /* ========================================================================
@@ -251,7 +250,7 @@ QPushButton[class="PersonalityCard"]::indicator {
 }
 
 QPushButton[class="PersonalityCard"][selected="true"] {
-    border: 2px solid #00E5FF;
+    border: 1px solid #00E5FF;
     background-color: rgba(0, 229, 255, 0.08);
     color: #FFFFFF;
 }

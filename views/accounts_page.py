@@ -21,6 +21,35 @@ class AccountsPage(QWidget):
         header.setStyleSheet("font-size: 20px; color: #00E5FF; font-weight: bold;")
         layout.addWidget(header)
 
+        tasa_layout = QHBoxLayout()
+        tasa_layout.setContentsMargins(0, 0, 0, 0)
+        tasa_layout.setSpacing(10)
+
+        tasa_label = QLabel("Tasa de Cambio Global (Bs por USD):")
+        tasa_label.setStyleSheet("color: #A0A0A0;")
+        tasa_layout.addWidget(tasa_label)
+
+        self.txt_tasa = QLineEdit()
+        self.txt_tasa.setPlaceholderText("Ej: 38.5")
+        self.txt_tasa.setStyleSheet(
+            "QLineEdit { background-color: #121212; color: #FFFFFF; border: 1px solid #333333; border-radius: 8px; padding: 8px; }"
+            "QLineEdit:focus { border: 1px solid #00E5FF; }"
+        )
+        self.txt_tasa.setFixedWidth(160)
+        tasa_layout.addWidget(self.txt_tasa)
+
+        btn_save_tasa = QPushButton("Actualizar Tasa")
+        btn_save_tasa.setObjectName("PrimaryBtn")
+        btn_save_tasa.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_save_tasa.clicked.connect(self._guardar_tasa_global)
+        tasa_layout.addWidget(btn_save_tasa)
+
+        current_tasa = self.db.get_global_setting('tasa_cambio', '')
+        if current_tasa:
+            self.txt_tasa.setText(current_tasa)
+
+        layout.addLayout(tasa_layout)
+
         # Formulario de entrada
         form_container = QVBoxLayout()
         form_container.setSpacing(10)
@@ -116,3 +145,16 @@ class AccountsPage(QWidget):
         if confirm == QMessageBox.StandardButton.Yes:
             self.db.eliminar_cuenta(id_cuenta)
             self.cargar_tabla()
+
+    def _guardar_tasa_global(self):
+        value = self.txt_tasa.text().strip()
+        if not value:
+            QMessageBox.warning(self, "Error", "Ingresa un valor válido para la tasa.")
+            return
+
+        self.db.set_global_setting('tasa_cambio', value)
+        QMessageBox.information(
+            self,
+            "Pegasus",
+            f"La tasa global se ha actualizado a {value} y se aplicará a todos los bots."
+        )

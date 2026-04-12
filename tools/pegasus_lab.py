@@ -29,19 +29,21 @@ from PyQt6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
 from groq import Groq
 from core.ai_engine import AIService, ROLE_DNA
 from services.database_service import db
+from views.dialogs.instagram_dialog import AddAccountDialog
 
 
 class AIResponseWorker(QThread):
     finished = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, ai_service, user_text, config, inventory_path, time_context):
+    def __init__(self, ai_service, user_text, config, inventory_path, time_context, chat_history=None):
         super().__init__()
         self.ai = ai_service
         self.user_text = user_text
         self.config = config or {}
         self.inventory_path = inventory_path
         self.time_context = time_context
+        self.chat_history = chat_history or []
 
     def run(self):
         try:
@@ -57,6 +59,7 @@ class AIResponseWorker(QThread):
                     custom_training=self.config.get('system_prompt', ''),
                     current_state=self.config.get('current_state', 'CONSULTA'),
                     bot_mission=self.config.get('bot_mission', 'Ventas'),
+                    chat_history=self.chat_history,
                 )
             else:
                 respuesta = self.ai.generate_response(
@@ -71,6 +74,7 @@ class AIResponseWorker(QThread):
                     location=self.config.get('location'),
                     website=self.config.get('website'),
                     exchange_rate=self.config.get('exchange_rate'),
+                    chat_history=self.chat_history,
                 )
             if respuesta is None:
                 raise RuntimeError("No se obtuvo respuesta del motor.")
@@ -240,6 +244,7 @@ class PegasusLab(QWidget):
         self.active_test_profile = None
         self.has_inventory = False
         self.message_buffer = []
+        self.chat_history = []
         self.manual_mode = False
         self.last_message_was_image = False
         self.worker = None
@@ -272,10 +277,10 @@ class PegasusLab(QWidget):
         label_chat.setStyleSheet("font-weight: bold; font-size: 16px;")
         interaction_layout.addWidget(label_chat)
 
-        self.chat_history = QTextEdit()
-        self.chat_history.setReadOnly(True)
-        self.chat_history.setStyleSheet("font-size: 13px;")
-        interaction_layout.addWidget(self.chat_history, stretch=6)
+        self.chat_history_widget = QTextEdit()
+        self.chat_history_widget.setReadOnly(True)
+        self.chat_history_widget.setStyleSheet("font-size: 13px;")
+        interaction_layout.addWidget(self.chat_history_widget, stretch=6)
 
         input_row = QHBoxLayout()
         input_row.setSpacing(8)
@@ -323,6 +328,13 @@ class PegasusLab(QWidget):
         self.combo_cuentas.currentTextChanged.connect(self.cambiar_perfil)
         self.combo_cuentas.setStyleSheet("color: #FFFFFF; background-color: #111111; border: 1px solid #222222; padding: 6px;")
         layout_selectores.addWidget(self.combo_cuentas, stretch=2)
+
+        self.btn_config_account = QPushButton("⚙️ Editar / Añadir Cuenta")
+        self.btn_config_account.setStyleSheet(
+            "background-color: #333333; color: white; padding: 5px 15px; border-radius: 4px; font-weight: bold;"
+        )
+        self.btn_config_account.clicked.connect(self._on_config_account)
+        layout_selectores.addWidget(self.btn_config_account)
 
         label_rol = QLabel("2. Forzar Rol del Bot")
         label_rol.setStyleSheet("font-size: 12px; color: #DDDDDD;")
@@ -454,6 +466,22 @@ class PegasusLab(QWidget):
             self._append_log(f"[LAB] Cargadas {len(rows)} cuentas desde la BD.")
         except Exception as exc:
             self._append_log(f"[LAB] Error al cargar cuentas DB: {exc}")
+
+    def _on_config_account(self):
+        dialog = AddAccountDialog(self, account_data=self.account)
+        if dialog.exec():
+            new_data = dialog.get_data()
+            account_id = self.account.get('id') if self.account else None
+            if account_id:
+                db.save_account(account_id, new_data)
+                self._append_log(f"⚙️ [SISTEMA] Cuenta @{new_data.get('insta_user')} actualizada con éxito.")
+            else:
+                db.save_account(None, new_data)
+                self._append_log(f"⚙️ [SISTEMA] Cuenta @{new_data.get('insta_user')} creada con éxito.")
+
+            if hasattr(self, '_load_accounts'):
+                self._load_accounts()
+            self._refresh_account()
 
     def aplicar_configuracion_prueba(self):
         account_id = self.combo_cuentas.currentData()
@@ -679,7 +707,7 @@ class PegasusLab(QWidget):
 
     def _append_chat(self, quien, mensaje):
         timestamp = datetime.now().strftime('%H:%M:%S')
-        self.chat_history.append(f"[{timestamp}] ({quien}) {mensaje}")
+        self.chat_history_widget.append(f"[{timestamp}] ({quien}) {mensaje}")
 
     def _append_log(self, mensaje):
         timestamp = datetime.now().strftime('%H:%M:%S')
@@ -785,8 +813,12 @@ class PegasusLab(QWidget):
         self.input_message.clear()
         self._enqueue_message(texto)
 
+    def _on_clear_chat(self):
+        self.chat_history.append({'role': 'system', 'content': '[El chat ha sido reiniciado por el usuario]'})
+
     def _enqueue_message(self, texto):
         self.message_buffer.append(texto)
+        self.chat_history.append({'role': 'user', 'content': texto})
         self._append_chat("Cliente", texto)
         self._append_log(f"[BUFFER] Añadido: \"{texto}\". Timer reiniciado.")
         self.buffer_timer.stop()
@@ -883,13 +915,13 @@ class PegasusLab(QWidget):
             config,
             inventory_path,
             time_context,
+            chat_history=self.chat_history,
         )
         self.worker.finished.connect(self._on_ai_finished)
         self.worker.failed.connect(self._on_ai_failed)
         self.worker.start()
 
     def _on_ai_finished(self, respuesta):
-        self._append_chat("Pegasus", respuesta)
         lower = respuesta.lower()
         should_trigger_handoff = self.last_message_was_image or "whatsapp" in lower or "wa.me" in lower or "api.whatsapp.com" in lower
 
@@ -902,6 +934,23 @@ class PegasusLab(QWidget):
                 self.data_capture_box.setPlainText(pretty)
                 self.data_capture_box.setVisible(True)
                 self._append_log("[DATA] Bloque <DATA> detectado y mostrado en la consola de datos capturados.")
+
+                # --- NUEVA LÓGICA: INYECCIÓN AUTOMÁTICA A FINANZAS ---
+                cliente = parsed.get("cliente", "Cliente Desconocido")
+                referencia = parsed.get("referencia", "000000")
+                banco = parsed.get("banco", "No especificado")
+
+                # Limpiar el monto por si la IA le pone el símbolo $
+                try:
+                    monto = float(str(parsed.get("monto", 0)).replace('$', '').strip())
+                except ValueError:
+                    monto = 0.0
+
+                # Solo lo enviamos a Finanzas si tiene referencia válida y monto mayor a 0
+                if referencia and str(referencia) not in ["...", ""] and monto > 0:
+                    account_id = self.account.get('id') if self.account else 0
+                    db.insert_sale(account_id, cliente, str(referencia), banco, monto, "PENDIENTE")
+                    self._append_log(f"💰 [SISTEMA] Pago capturado y enviado a Finanzas: {cliente} - {monto}$")
             except Exception as exc:
                 self.data_capture_box.setPlainText(f"ERROR JSON: {exc}\n\n{raw_data}")
                 self.data_capture_box.setVisible(True)
@@ -920,6 +969,11 @@ class PegasusLab(QWidget):
             if self.manual_mode:
                 self._set_manual_mode(False)
         self.last_message_was_image = False
+
+        respuesta_limpia = re.sub(r'<DATA>.*?</DATA>', '', respuesta, flags=re.DOTALL).strip()
+        self.chat_history.append({'role': 'assistant', 'content': respuesta_limpia})
+        assistant_name = self.account.get('assistant_name', 'Pegasus') if self.account else 'Pegasus'
+        self._append_chat(assistant_name, respuesta_limpia)
 
     def _on_ai_failed(self, error_text):
         self._append_log(f"[GROQ] Error: {error_text}")

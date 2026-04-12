@@ -8,137 +8,14 @@ from PyQt6.QtCore import Qt, QSize
 import qtawesome as qta # Asegúrate de tenerlo instalado: pip install qtawesome
 
 from views.instagram_accounts_page import InstagramAccountsPage
+from views.home_page import HomePage
+from views.sales_page import SalesPage
 from views.log_dialog import LogDialog
 from controllers.instagram_controller import InstagramController
 from controllers.main_controller import MainController
 from services.database_service import LocalDBService
 from services.instagram_service import InstagramService
 from services.security_service import SecurityService
-
-class SalesValidationPage(QWidget):
-    def __init__(self, db_service, parent=None):
-        super().__init__(parent)
-        self.db_service = db_service
-        self.parent_window = parent
-        self.setObjectName("SalesValidationPage")
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(35, 35, 35, 35)
-        layout.setSpacing(18)
-
-        header = QHBoxLayout()
-        header.setSpacing(16)
-        self.kpi_pending = self._create_kpi_card("Ventas por Validar", "0")
-        self.kpi_amount = self._create_kpi_card("Citas Agendadas", "0")
-        self.kpi_today = self._create_kpi_card("Leads Nuevos", "0")
-
-        header.addWidget(self.kpi_pending)
-        header.addWidget(self.kpi_amount)
-        header.addWidget(self.kpi_today)
-        layout.addLayout(header)
-
-        self.orders_table = QTableWidget(0, 5)
-        self.orders_table.setProperty("class", "ModernTable")
-        self.orders_table.setHorizontalHeaderLabels(["Usuario", "Misión", "Resumen de Datos", "Fecha", "Acciones"])
-        self.orders_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.orders_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.orders_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.orders_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.orders_table.verticalHeader().setVisible(False)
-        self.orders_table.setShowGrid(False)
-        layout.addWidget(self.orders_table)
-
-        self.empty_orders_label = QLabel("Tu asistente Pegasus está trabajando... No hay capturas nuevas por ahora")
-        self.empty_orders_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_orders_label.setStyleSheet("color: #A0A0A0; font-size: 16px; padding: 40px; background-color: rgba(255,255,255,0.02); border-radius: 14px;")
-        self.empty_orders_label.hide()
-        layout.addWidget(self.empty_orders_label)
-
-        self.refresh_pending_orders()
-
-    def _create_kpi_card(self, title, value):
-        card = QFrame()
-        card.setObjectName("KPICard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(16, 16, 16, 16)
-        card_layout.setSpacing(8)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("KPIHeader")
-        card_layout.addWidget(title_label)
-
-        value_label = QLabel(value)
-        value_label.setObjectName("KPIValue")
-        card_layout.addWidget(value_label)
-
-        card.value_label = value_label
-        return card
-
-    def refresh_pending_orders(self):
-        orders = []
-        if hasattr(self.db_service, 'get_pending_orders'):
-            try:
-                orders = self.db_service.get_pending_orders()
-            except Exception:
-                orders = []
-
-        self.orders_table.setRowCount(0)
-        self.empty_orders_label.setVisible(len(orders) == 0)
-        self.orders_table.setVisible(len(orders) > 0)
-
-        citas_count = 0
-        leads_count = 0
-        for order in orders:
-            row = self.orders_table.rowCount()
-            self.orders_table.insertRow(row)
-            usuario_text = f"👤 {order.get('cliente_id', 'Desconocido')}"
-            self.orders_table.setItem(row, 0, QTableWidgetItem(usuario_text))
-
-            mission = str(order.get('mision', order.get('bot_mission', 'Ventas')) or 'Ventas').strip()
-            mission_icon = '📌' if 'cita' in mission.lower() or 'agenda' in mission.lower() else '🛒' if 'venta' in mission.lower() or 'retail' in mission.lower() else '🔎'
-            mission_text = f"{mission_icon} {mission}"
-            self.orders_table.setItem(row, 1, QTableWidgetItem(mission_text))
-
-            if 'cita' in mission.lower() or 'agenda' in mission.lower() or 'reservas' in mission.lower():
-                citas_count += 1
-            elif 'lead' in mission.lower() or 'prospecto' in mission.lower():
-                leads_count += 1
-
-            summary_text = order.get('summary') or f"{order.get('producto', 'Sin detalles')} · Ref: {order.get('referencia_pago', order.get('ref', 'N/A'))}"
-            self.orders_table.setItem(row, 2, QTableWidgetItem(str(summary_text)))
-
-            fecha_text = order.get('created_at', order.get('fecha', 'Sin fecha'))
-            self.orders_table.setItem(row, 3, QTableWidgetItem(str(fecha_text)))
-
-            action_widget = QWidget()
-            action_layout = QHBoxLayout(action_widget)
-            action_layout.setContentsMargins(0, 0, 0, 0)
-            action_layout.setSpacing(6)
-
-            self.orders_table.setRowHeight(row, 72)
-
-            view_btn = QPushButton(qta.icon('fa5s.eye', color='#00E5FF'))
-            view_btn.setObjectName("ActionButton")
-            view_btn.setToolTip("Ver detalle de la captura")
-            view_btn.clicked.connect(lambda checked, oid=order.get('id'): self.parent_window.view_order_details(oid))
-            action_layout.addWidget(view_btn)
-
-            approve_btn = QPushButton(qta.icon('fa5s.check', color='#00E5FF'))
-            approve_btn.setObjectName("ActionButton")
-            approve_btn.setToolTip("Marcar como procesado")
-            approve_btn.clicked.connect(lambda checked, oid=order.get('id'): self.parent_window.approve_order(oid))
-            action_layout.addWidget(approve_btn)
-
-            self.orders_table.setCellWidget(row, 4, action_widget)
-
-        self.kpi_pending.value_label.setText(str(len(orders)))
-        self.kpi_amount.value_label.setText(str(citas_count))
-        self.kpi_today.value_label.setText(str(leads_count))
-
-    def mark_refresh(self):
-        self.refresh_pending_orders()
 
 class MainWindow(QMainWindow):
     def __init__(self, cliente_data=None, licencia_data=None, hwid=None):
@@ -179,10 +56,11 @@ class MainWindow(QMainWindow):
         self.setup_sidebar()
 
         # 5. TERCERO: Configurar las páginas
-        self.home_page = QWidget()
-        self._build_home_page()
+        self.home_page = HomePage(self)
+        self.lbl_welcome = self.home_page.lbl_welcome
+        self.lbl_license_status = self.home_page.lbl_license_status
 
-        self.sales_validation_page = SalesValidationPage(self.db_service, parent=self)
+        self.sales_page = SalesPage(self.db_service, parent=self)
 
         self.insta_controller = InstagramController(
             self.db_service,
@@ -209,7 +87,7 @@ class MainWindow(QMainWindow):
         # Añadir al stack
         self.pages_container.addWidget(self.home_page)      # Índice 0
         self.pages_container.addWidget(self.accounts_page)  # Índice 1
-        self.pages_container.addWidget(self.sales_validation_page)    # Índice 2
+        self.pages_container.addWidget(self.sales_page)    # Índice 2
 
         self.pages_container.currentChanged.connect(self.on_page_changed)
 
@@ -219,32 +97,6 @@ class MainWindow(QMainWindow):
         # Si existe una cuenta con bot habilitado, intenta iniciar automáticamente.
         self.main_controller.auto_start_if_enabled()
 
-    def _build_home_page(self):
-        layout = QVBoxLayout(self.home_page)
-        layout.setContentsMargins(35, 35, 35, 35)
-        layout.setSpacing(18)
-
-        self.lbl_welcome = QLabel("Bienvenido, nuestro agente Pegasus")
-        self.lbl_welcome.setStyleSheet("color: #FFFFFF; font-size: 24px; font-weight: 800;")
-        layout.addWidget(self.lbl_welcome)
-
-        self.lbl_license_status = QLabel("Licencia: Cargando datos...")
-        self.lbl_license_status.setStyleSheet("color: #00E5FF; font-size: 13px; margin-bottom: 20px;")
-        layout.addWidget(self.lbl_license_status)
-
-        self.tx_info = QLabel(
-            "Usa el panel de Cuentas IG para añadir una cuenta, luego pulsa Iniciar Bot para comenzar a atender mensajes automáticos."
-        )
-        self.tx_info.setWordWrap(True)
-        self.tx_info.setStyleSheet("color: #AAAAAA; font-size: 12px; margin-bottom: 20px;")
-        layout.addWidget(self.tx_info)
-
-        self.tx_info = QLabel(
-            "En esta pantalla verás el estado de tu licencia. Navega a Cuentas IG para administrar agentes y activar el bot."
-        )
-        self.tx_info.setWordWrap(True)
-        self.tx_info.setStyleSheet("color: #AAAAAA; font-size: 12px; margin-bottom: 20px;")
-        layout.addWidget(self.tx_info)
 
     def view_order_details(self, order_id):
         order = None
@@ -271,8 +123,8 @@ class MainWindow(QMainWindow):
     def approve_order(self, order_id):
         if order_id and hasattr(self.db_service, 'update_order_status'):
             self.db_service.update_order_status(order_id, 'VALIDATED')
-            if hasattr(self, 'sales_validation_page'):
-                self.sales_validation_page.refresh_pending_orders()
+            if hasattr(self, 'sales_page'):
+                self.sales_page.refresh_pending_orders()
             QMessageBox.information(self, "Venta validada", "La venta ha sido validada y el sistema ha actualizado el estado.")
 
     def reject_order(self, order_id):
@@ -281,8 +133,8 @@ class MainWindow(QMainWindow):
         motivo, ok = QInputDialog.getText(self, "Rechazar venta", "Motivo del rechazo (rápido):")
         motivo = motivo.strip() if ok else "Rechazo manual"
         self.db_service.update_order_status(order_id, 'REJECTED')
-        if hasattr(self, 'sales_validation_page'):
-            self.sales_validation_page.refresh_pending_orders()
+        if hasattr(self, 'sales_page'):
+            self.sales_page.refresh_pending_orders()
         QMessageBox.information(self, "Venta rechazada", f"La venta fue rechazada. Motivo: {motivo}")
 
     def show_handoff_alert(self, thread_id, username):
@@ -377,8 +229,8 @@ class MainWindow(QMainWindow):
     def show_page(self, index):
         if index == 1 and hasattr(self, 'accounts_page'):
             self.accounts_page.controller.refresh(self.current_cliente_id)
-        if index == 2 and hasattr(self, 'sales_validation_page'):
-            self.sales_validation_page.refresh_pending_orders()
+        if index == 2 and hasattr(self, 'sales_page'):
+            self.sales_page.refresh_pending_orders()
         self.pages_container.setCurrentIndex(index)
 
     def append_log_message(self, message):

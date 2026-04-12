@@ -53,10 +53,17 @@ class LocalDBService:
                     schedule_start TEXT DEFAULT '08:00',
                     schedule_end TEXT DEFAULT '18:00',
                     context_type TEXT DEFAULT 'Vendedor de tienda',
+                    payment_methods TEXT DEFAULT '[]',
+                    payment_method_details TEXT DEFAULT '{}',
                     session_data TEXT DEFAULT '',
                     last_log TEXT DEFAULT 'Sistema listo'
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE settings ADD COLUMN payment_methods TEXT DEFAULT '[]'")
+                conn.execute("ALTER TABLE settings ADD COLUMN payment_method_details TEXT DEFAULT '{}'")
+            except sqlite3.OperationalError:
+                pass  # Las columnas ya existen, continuamos normal
 
             # 2. Tabla de Historial (Requerida por el motor de chat)
             conn.execute("""
@@ -105,6 +112,27 @@ class LocalDBService:
                     datos_envio TEXT,
                     status TEXT DEFAULT 'PENDING_VALIDATION',
                     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS global_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+
+            # Tabla de Auditoría de Ventas y Pagos
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sales (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cuenta_id INTEGER,
+                    cliente_nombre TEXT,
+                    referencia TEXT,
+                    banco TEXT,
+                    monto_usd REAL,
+                    estado TEXT DEFAULT 'PENDIENTE',
+                    fecha DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -160,6 +188,7 @@ class LocalDBService:
                 "website": "TEXT DEFAULT ''",
                 "exchange_rate": "TEXT DEFAULT ''",
                 "payment_methods": "TEXT DEFAULT '[]'",
+                "payment_method_details": "TEXT DEFAULT ''",
                 "info_eventos": "TEXT DEFAULT ''",
                 "proxy": "TEXT DEFAULT 'Auto'",
                 "schedule_start": "TEXT DEFAULT '08:00'",
@@ -193,6 +222,34 @@ class LocalDBService:
             
             conn.commit()
 
+    def get_global_setting(self, key, default=""):
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT value FROM global_settings WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row['value'] if row else default
+
+    def set_global_setting(self, key, value):
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO global_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """, (key, str(value)))
+            conn.commit()
+
+    def insert_sale(self, cuenta_id, cliente_nombre, referencia, banco, monto_usd, estado="PENDIENTE"):
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO sales (cuenta_id, cliente_nombre, referencia, banco, monto_usd, estado)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (cuenta_id, cliente_nombre, referencia, banco, monto_usd, estado))
+            conn.commit()
+
+    def get_sales(self):
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM sales ORDER BY fecha DESC")
+            return [dict(row) for row in cursor.fetchall()]
+
     # --- MÉTODOS DE OPERACIÓN ---
 
 
@@ -224,6 +281,13 @@ class LocalDBService:
                 account['payment_methods'] = json.loads(raw_payment_methods)
             except Exception:
                 account['payment_methods'] = [item.strip() for item in raw_payment_methods.split(',') if item.strip()]
+
+        raw_payment_details = account.get('payment_method_details', '')
+        if isinstance(raw_payment_details, str):
+            try:
+                account['payment_method_details'] = json.loads(raw_payment_details)
+            except Exception:
+                account['payment_method_details'] = {}
         return account
 
     def obtener_cuentas(self, cliente_id=None):
@@ -376,7 +440,7 @@ class LocalDBService:
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
                 'bot_role', 'bot_mission', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
                 'country', 'language', 'currency_symbol',
-                'payment_methods', 'info_eventos',
+                'payment_methods', 'payment_method_details', 'info_eventos',
                 'location', 'website', 'exchange_rate',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
             ]
@@ -389,7 +453,7 @@ class LocalDBService:
                 data['prompt'], data.get('bot_role', ''), data.get('bot_mission', 'Ventas'), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
                 data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'),
-                json.dumps(data.get('payment_methods', [])), data.get('info_eventos', ''),
+                json.dumps(data.get('payment_methods', [])), json.dumps(data.get('payment_method_details', {})), data.get('info_eventos', ''),
                 data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
                 data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
             ]
@@ -419,13 +483,15 @@ class LocalDBService:
             payload['structured_identity'] = json.dumps(payload['structured_identity'])
         if 'payment_methods' in payload and isinstance(payload['payment_methods'], list):
             payload['payment_methods'] = json.dumps(payload['payment_methods'])
+        if 'payment_method_details' in payload and isinstance(payload['payment_method_details'], dict):
+            payload['payment_method_details'] = json.dumps(payload['payment_method_details'])
 
         allowed = {
             'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
             'description', 'bot_role', 'bot_mission', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
             'country', 'language', 'currency_symbol',
-            'payment_methods', 'info_eventos',
+            'payment_methods', 'payment_method_details', 'info_eventos',
             'location', 'website', 'exchange_rate',
             'context_type', 'schedule_start', 'schedule_end',
             'proxy', 'session_data', 'last_log'
@@ -469,6 +535,7 @@ class LocalDBService:
             account.setdefault('language', 'es')
             account.setdefault('currency_symbol', 'Bs')
             account.setdefault('payment_methods', [])
+            account.setdefault('payment_method_details', {})
             account.setdefault('info_eventos', '')
             account.setdefault('location', '')
             account.setdefault('website', '')
@@ -488,6 +555,7 @@ class LocalDBService:
             cuenta.setdefault('language', 'es')
             cuenta.setdefault('currency_symbol', 'Bs')
             cuenta.setdefault('payment_methods', [])
+            cuenta.setdefault('payment_method_details', {})
             cuenta.setdefault('info_eventos', '')
             cuenta.setdefault('location', '')
             cuenta.setdefault('website', '')

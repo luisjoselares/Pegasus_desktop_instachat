@@ -8,6 +8,7 @@ from groq import Groq
 from dotenv import load_dotenv
 from core.roles.profiles import BOT_PROFILES
 from services.cloud_service import get_active_groq_key, desactivar_llave_por_uso, descontar_mensaje_trial, verificar_trial
+from services.database_service import db
 
 load_dotenv()
 
@@ -395,8 +396,9 @@ class AIService:
         if settings:
             if settings.get('location'):
                 context_parts.append(f"Ubicación configurada: {settings.get('location')}.")
-            if settings.get('exchange_rate'):
-                context_parts.append(f"Tasa de cambio: {settings.get('exchange_rate')}.")
+            tasa_global = db.get_global_setting("tasa_cambio", "")
+            if tasa_global:
+                context_parts.append(f"Tasa de cambio: {tasa_global}.")
             if settings.get('website'):
                 context_parts.append(f"Sitio web o catálogo online: {settings.get('website')}.")
         return "\n".join(context_parts).strip()
@@ -483,8 +485,9 @@ class AIService:
         currency_symbol = config.get('currency_symbol')
         location = config.get('location')
         website = config.get('website')
-        exchange_rate = config.get('exchange_rate')
+        exchange_rate = db.get_global_setting("tasa_cambio", "")
         payment_methods = config.get('payment_methods', [])
+        payment_method_details = config.get('payment_method_details', {})
         info_eventos = config.get('info_eventos', '')
 
         if country:
@@ -501,6 +504,13 @@ class AIService:
             parts.append(f"Tasa de cambio definida: {exchange_rate}.")
         if payment_methods:
             parts.append(f"Métodos de pago aceptados: {', '.join(payment_methods)}.")
+        if payment_method_details:
+            if isinstance(payment_method_details, dict):
+                details_text = '; '.join(f"{method}: {value}" for method, value in payment_method_details.items() if value)
+            else:
+                details_text = str(payment_method_details)
+            if details_text:
+                parts.append(f"Detalles de pago: {details_text}.")
         if info_eventos:
             parts.append(f"Lives, eventos y promociones clave: {info_eventos}.")
 
@@ -528,11 +538,11 @@ class AIService:
             return True
         if missing_website and not config.get('website') and not relevant_inventory:
             return True
-        if missing_price and not config.get('exchange_rate') and not relevant_inventory:
+        if missing_price and not db.get_global_setting("tasa_cambio") and not relevant_inventory:
             return True
         return False
 
-    def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None, current_state=None, bot_mission=None):
+    def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None, current_state=None, bot_mission=None, chat_history=None):
         config = config or {}
         current_state = current_state or config.get('current_state', 'CONSULTA')
         bot_mission = bot_mission or config.get('bot_mission', 'Ventas')
@@ -549,20 +559,17 @@ class AIService:
             inventory = rag_context
             relevant_inventory = [line for line in rag_context.splitlines() if line.startswith('-')]
 
-        if self._needs_handoff(user_input, config, relevant_inventory):
-            return "Dame un momento para confirmarte...", True
-
         system_prompt = self._build_dynamic_system_prompt(config, base_prompt=config.get('system_prompt') or config.get('business_profile'))
         if str(bot_mission).strip().lower() == 'ventas':
             system_prompt += (
                 f"\nEl cliente actualmente está en el estado: {current_state}.\n\n"
                 "Si el estado es CONSULTA: Responde dudas y ofrece productos. Si el cliente dice que quiere comprar, pídele que confirme el producto y cambia tu tono a transaccional.\n\n"
-                "Si el estado es ESPERANDO_DATOS: Tu ÚNICA misión es pedir Nombre, Cédula, Teléfono, Dirección y Referencia de Pago."
+                "Si el estado es ESPERANDO_DATOS: Tu ÚNICA misión es pedir Nombre, Banco emisor, Cédula, Teléfono, Dirección y Referencia de Pago."
             )
 
-        system_prompt += "\nSi el contexto inyectado por el RAG contiene información sobre un producto, usa esos precios y detalles como la única verdad. Si no hay información en el contexto, activa el protocolo de 'Dame un momento para consultar...' (Handoff)."
+        system_prompt += "\nREGLA DE NEGOCIACIÓN: Si el cliente pregunta un precio y NO lo tienes en el inventario o contexto, NUNCA digas 'no sé', ni 'dame un momento para consultar'. Responde como un experto: dile que el precio depende de los detalles exactos (tallas, cantidad, diseño), hazle un par de preguntas para perfilar su pedido, y dile que con esa información le darás la cotización exacta. Mantén la venta viva."
         system_prompt += "\nEl bloque <DATA> es un Contrato de Información. Si tienes los campos básicos obligatorios, inclúyelo siempre, incluso si faltan detalles menores. Es preferible capturar la operación con parte de la información pendiente a seguir negociando sin cerrar la venta."
-        system_prompt += "\nCuando el cliente te haya dado al menos la Referencia de Pago y la Dirección, o hayas recolectado los campos básicos obligatorios, DEBES incluir al final de tu mensaje este bloque exacto, reemplazando los valores: <DATA>{\"producto\": \"...\", \"monto\": 0, \"referencia\": \"...\", \"envio\": \"...\"}</DATA>."
+        system_prompt += "\nCuando el cliente te haya dado al menos la Referencia de Pago, DEBES incluir al final de tu mensaje este bloque exacto: <DATA>{\"cliente\": \"...\", \"banco\": \"...\", \"producto\": \"...\", \"monto\": 0.0, \"referencia\": \"...\", \"envio\": \"...\"}</DATA>."
 
         response = self.generate_response(
             user_input=user_input,
@@ -577,8 +584,8 @@ class AIService:
             custom_training=custom_training,
             location=config.get('location'),
             website=config.get('website'),
-            exchange_rate=config.get('exchange_rate'),
             currency_symbol=config.get('currency_symbol'),
+            chat_history=chat_history,
         )
         return response, False
 
@@ -609,11 +616,11 @@ class AIService:
         professional_keywords = ["clínica", "consultorio", "médico", "medico", "doctor", "abogado", "legal", "psicólogo", "psicologa"]
         return any(term in profile_text for term in professional_keywords)
 
-    def build_final_prompt(self, user_input=None, role=None, business_profile=None, inventory=None, extra_context=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, exchange_rate=None, currency_symbol=None, payment_methods=None, info_eventos=None):
+    def build_final_prompt(self, user_input=None, role=None, business_profile=None, inventory=None, extra_context=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, exchange_rate=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None):
         resolved_bot_name = self._resolve_bot_name(bot_name)
         resolved_whatsapp = self._resolve_whatsapp_contact(whatsapp_contacto)
         resolved_profile_name = self._resolve_business_profile_name(business_profile)
-        resolved_exchange_rate = str(exchange_rate).strip() if exchange_rate else ""
+        resolved_exchange_rate = str(exchange_rate).strip() if exchange_rate else db.get_global_setting("tasa_cambio", "")
         resolved_currency_symbol = str(currency_symbol).strip() if currency_symbol else "la moneda local"
         lower_input = str(user_input).lower() if user_input else ""
         crisis_mode = self._detect_crisis_mode(user_input)
@@ -713,6 +720,15 @@ class AIService:
             prompt_parts.append(
                 f"Métodos de pago aceptados: {payment_text}. Usa esta lista cuando el cliente pregunte cómo pagar."
             )
+        if payment_method_details:
+            if isinstance(payment_method_details, dict):
+                details_text = '; '.join(f"{method}: {value}" for method, value in payment_method_details.items() if value)
+            else:
+                details_text = str(payment_method_details)
+            if details_text:
+                prompt_parts.append(
+                    f"Detalles de pago: {details_text}."
+                )
         if info_eventos:
             prompt_parts.append(
                 f"Lives, eventos o promociones especiales: {info_eventos}. Si el cliente pregunta por campañas o actividades, responde con esos detalles exactos."
@@ -816,7 +832,7 @@ class AIService:
         estimated = max(1, len(text) // 4)
         return estimated
 
-    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, exchange_rate=None, currency_symbol=None, payment_methods=None, info_eventos=None):
+    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None, chat_history=None):
         if not self.client:
             self._refresh_client()
 
@@ -825,6 +841,15 @@ class AIService:
 
         if not inventory and inventory_path:
             inventory = self.load_inventory_context(inventory_path)
+
+        tasa_global = db.get_global_setting("tasa_cambio", "No definida")
+        price_rule = (
+            "\nREGLA DE PRECIOS OBLIGATORIA:\n"
+            "1. Todos los precios de los productos y servicios deben informarse ÚNICAMENTE en Dólares (USD / $) por defecto.\n"
+            "2. NUNCA menciones el precio en Bolívares (Bs) a menos que el cliente pregunte explícitamente '¿y en bs?', '¿cuánto es en bolívares?', '¿precio en bs?' o similar.\n"
+            f"3. Si el cliente pregunta el precio en bolívares, calcula el monto multiplicando el precio en USD por la Tasa de Cambio actual que es: {tasa_global} Bs por cada dólar."
+        )
+        system_prompt = (system_prompt or "") + price_rule
 
         contexto = self.build_final_prompt(
             user_input=user_input,
@@ -838,9 +863,9 @@ class AIService:
             custom_training=custom_training,
             location=location,
             website=website,
-            exchange_rate=exchange_rate,
             currency_symbol=currency_symbol,
             payment_methods=payment_methods,
+            payment_method_details=payment_method_details,
             info_eventos=info_eventos,
         )
 
@@ -857,14 +882,16 @@ class AIService:
                 self.trial_status_callback(validacion.get("restantes"))
             logging.info(f"[TRIAL] Verificación previa exitosa. Uso de tokens estimado: {expected_cost}, estado: {validacion.get('restantes')}")
 
+        messages = [{"role": "system", "content": contexto}]
+        if chat_history:
+            messages.extend(chat_history[-15:])
+        messages.append({"role": "user", "content": user_input})
+
         for attempt in range(3):
             try:
                 completion = self.client.chat.completions.create(
                     model="llama-3.1-8b-instant",
-                    messages=[
-                        {"role": "system", "content": contexto},
-                        {"role": "user", "content": user_input}
-                    ]
+                    messages=messages
                 )
                 respuesta = completion.choices[0].message.content
                 respuesta = self._sanitize_ai_response(
