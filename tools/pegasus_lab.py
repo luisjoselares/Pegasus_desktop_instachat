@@ -497,6 +497,9 @@ class PegasusLab(QWidget):
                 self._append_log(f"[LAB] No se encontró la cuenta con id {account_id}.")
                 return
 
+            self.account = dict(row)
+            self.current_account_id = account_id
+            self.selected_preset = None
             self.active_test_profile = {
                 'account_id': account_id,
                 'insta_user': row['insta_user'],
@@ -666,9 +669,25 @@ class PegasusLab(QWidget):
             self.profile_status_label.setText("Perfil: Ninguno seleccionado")
             return
 
-        account = next((c for c in self.accounts if (c.get('insta_user') or '').lower() == username.lower()), None)
+        account = next(
+            (
+                c for c in self.accounts
+                if (c.get('insta_user') or '').lower() == username.lower()
+                or (c.get('store_name') or '').lower() == username.lower()
+                or (c.get('business_name') or '').lower() == username.lower()
+            ),
+            None
+        )
         if not account:
-            account = next((c for c in self.manual_accounts if (c.get('insta_user') or '').lower() == username.lower()), None)
+            account = next(
+                (
+                    c for c in self.manual_accounts
+                    if (c.get('insta_user') or '').lower() == username.lower()
+                    or (c.get('store_name') or '').lower() == username.lower()
+                    or (c.get('business_name') or '').lower() == username.lower()
+                ),
+                None
+            )
             if account:
                 self._append_log(f"[PERFIL] Cuenta manual seleccionada: {username}.")
         if not account:

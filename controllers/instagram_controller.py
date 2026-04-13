@@ -81,6 +81,11 @@ class InstagramController(QObject):
             return
 
         account_data = data.copy()
+        if account_data.get('assistant_name'):
+            account_data['business_name'] = account_data.get('assistant_name')
+        elif account_data.get('bot_name'):
+            account_data['business_name'] = account_data.get('bot_name')
+
         if self.security_service and account_data.get('pass'):
             account_data['pass'] = self.security_service.encrypt(account_data['pass'])
 
@@ -103,6 +108,10 @@ class InstagramController(QObject):
             changes['description'] = data['description']
         if data.get('business_name') is not None:
             changes['business_name'] = data['business_name']
+        if data.get('assistant_name') is not None:
+            changes['business_name'] = data['assistant_name']
+        elif data.get('bot_name') is not None:
+            changes['business_name'] = data['bot_name']
         if data.get('business_data') is not None:
             changes['business_data'] = data['business_data']
         if data.get('bot_role') is not None:

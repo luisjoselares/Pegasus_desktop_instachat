@@ -398,7 +398,6 @@ class AddAccountDialog(QDialog):
         self.side_panel_stack.addWidget(self._create_info_panel_page())
         self.side_panel_stack.addWidget(self._create_attention_panel_page())
         self.side_panel_stack.addWidget(self._create_faq_panel_page())
-        self.side_panel_stack.addWidget(self._create_test_chat_panel_page())
 
         self.side_panel_container.setVisible(False)
         self.main_layout.addWidget(self.side_panel_container)
@@ -602,117 +601,6 @@ class AddAccountDialog(QDialog):
         layout.addStretch()
 
         return page
-
-    def _create_test_chat_panel_page(self):
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(14)
-
-        layout.addWidget(self._create_side_panel_page_header(
-            "Prueba de Pegasus", "Prueba la configuración del asistente directamente en el chat lateral."))
-
-        chat_card = QFrame()
-        chat_card.setStyleSheet(
-            "QFrame{background-color: rgba(255,255,255,0.04); border-radius: 18px; border: 1px solid rgba(255,255,255,0.08); }"
-        )
-        chat_card.setMinimumWidth(270)
-        chat_card.setMaximumWidth(270)
-        chat_card.setMaximumHeight(340)
-        chat_card_layout = QVBoxLayout(chat_card)
-        chat_card_layout.setContentsMargins(12, 12, 12, 12)
-        chat_card_layout.setSpacing(10)
-
-        self.test_chat_history_area = QScrollArea()
-        self.test_chat_history_area.setWidgetResizable(True)
-        self.test_chat_history_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.test_chat_history_area.setStyleSheet(
-            "QScrollArea{background: transparent; border: none;}"
-            "QScrollBar:vertical{width: 8px; background: transparent; margin: 0 0 0 0;}"
-            "QScrollBar::handle:vertical{background: rgba(255,255,255,0.15); border-radius: 4px;}"
-            "QScrollBar::handle:vertical:hover{background: rgba(255,255,255,0.25);}" 
-            "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page{height: 0; background: transparent;}"
-        )
-
-        self.test_chat_history_widget = QWidget()
-        self.test_chat_history_widget.setStyleSheet("background: transparent;")
-        self.test_chat_history_layout = QVBoxLayout(self.test_chat_history_widget)
-        self.test_chat_history_layout.setContentsMargins(0, 0, 0, 0)
-        self.test_chat_history_layout.setSpacing(10)
-        self.test_chat_history_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self.test_chat_history_area.setWidget(self.test_chat_history_widget)
-        self.test_chat_history_area.setMinimumHeight(200)
-        self.test_chat_history_area.setMaximumHeight(220)
-        self.test_chat_history_area.setMaximumWidth(256)
-        chat_card_layout.addWidget(self.test_chat_history_area)
-
-        input_row = QHBoxLayout()
-        input_row.setContentsMargins(0, 0, 0, 0)
-        input_row.setSpacing(10)
-
-        self.test_chat_input = QLineEdit()
-        self.test_chat_input.setPlaceholderText("Escribe tu mensaje...")
-        self.test_chat_input.setStyleSheet(
-            "QLineEdit{background-color: rgba(255,255,255,0.08); color: #FFFFFF; border: none; border-radius: 16px; padding: 10px 12px;}"
-            "QLineEdit:focus{border-color: rgba(0,229,255,0.35); }"
-        )
-        self.test_chat_input.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.test_chat_input.setMaximumWidth(180)
-        self.test_chat_input.returnPressed.connect(self.test_agent_response)
-        input_row.addWidget(self.test_chat_input, 1)
-
-        chat_send = QPushButton("Enviar")
-        chat_send.setObjectName("PrimaryBtn")
-        chat_send.setCursor(Qt.CursorShape.PointingHandCursor)
-        chat_send.setFixedWidth(80)
-        chat_send.clicked.connect(self.test_agent_response)
-        input_row.addWidget(chat_send)
-
-        chat_card_layout.addLayout(input_row)
-        layout.addWidget(chat_card, alignment=Qt.AlignmentFlag.AlignTop)
-        return page
-
-    def _append_test_chat_message(self, text, sender="user"):
-        bubble = QLabel(text)
-        bubble.setWordWrap(True)
-        bubble.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        bubble.setMaximumWidth(280)
-
-        if sender == "user":
-            bubble.setStyleSheet(
-                "QLabel{background-color:#0A6CFB; color:#FFFFFF; border-radius: 18px; padding: 12px 14px; margin-left: 60px;}"
-            )
-            container_layout = QHBoxLayout()
-            container_layout.setContentsMargins(0, 0, 0, 0)
-            container_layout.addStretch()
-            container_layout.addWidget(bubble)
-        else:
-            bubble.setStyleSheet(
-                "QLabel{background-color:#262626; color:#E8E8E8; border-radius: 18px; padding: 12px 14px; margin-right: 60px;}"
-            )
-            container_layout = QHBoxLayout()
-            container_layout.setContentsMargins(0, 0, 0, 0)
-            container_layout.addWidget(bubble)
-            container_layout.addStretch()
-
-        container_widget = QWidget()
-        container_widget.setLayout(container_layout)
-        self.test_chat_history_layout.addWidget(container_widget)
-        self.test_chat_history_area.verticalScrollBar().setValue(self.test_chat_history_area.verticalScrollBar().maximum())
-
-    def _clear_test_chat_history(self):
-        if hasattr(self, 'test_chat_history_layout'):
-            while self.test_chat_history_layout.count():
-                item = self.test_chat_history_layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-                elif item.layout():
-                    while item.layout().count():
-                        child = item.layout().takeAt(0)
-                        if child.widget():
-                            child.widget().deleteLater()
-                    item.layout().deleteLater()
 
     def _create_catalog_panel_page(self):
         page = QFrame()
@@ -1025,7 +913,6 @@ class AddAccountDialog(QDialog):
             "Información": 2,
             "Atención": 3,
             "Conocimiento": 4,
-            "test_chat": 5,
         }
         if section == "Finanzas":
             self.side_country_combo.setCurrentText(self.config_country)
@@ -1046,11 +933,6 @@ class AddAccountDialog(QDialog):
         elif section == "Atención":
             if hasattr(self, 'start_time') and hasattr(self, 'side_attention_info'):
                 self.side_attention_info.setText(f"Horario actual: {self.start_time.time().toString('HH:mm')} - {self.end_time.time().toString('HH:mm')}")
-        elif section == "test_chat":
-            if hasattr(self, 'test_chat_input'):
-                self.test_chat_input.clear()
-            self._clear_test_chat_history()
-
         index = mapping.get(section, 0)
         self.side_panel_stack.setCurrentIndex(index)
         self.toggle_side_panel(True)
@@ -1131,9 +1013,6 @@ class AddAccountDialog(QDialog):
         self.side_panel_animation.stop()
         self.side_panel_container.setVisible(False)
         self.side_panel_container.setMinimumWidth(0)
-        if hasattr(self, 'test_chat_input'):
-            self.test_chat_input.clear()
-        self._clear_test_chat_history()
         if hasattr(self, 'stacked'):
             self.stacked.setEnabled(True)
             self.stacked.setFocus()
@@ -1657,25 +1536,6 @@ class AddAccountDialog(QDialog):
         grid.addWidget(build_info_cell('fa5s.boxes', 'Inventario', self.lbl_resumen_inventario), 1, 2)
         card_layout.addLayout(grid)
 
-        self.btn_open_test_chat = QPushButton("Probar Configuración")
-        self.btn_open_test_chat.setObjectName("PrimaryBtn")
-        self.btn_open_test_chat.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_open_test_chat.setStyleSheet(
-            "QPushButton {"
-            "background-color: #00E5FF;"
-            "color: #000000;"
-            "border-radius: 20px;"
-            "padding: 12px 18px;"
-            "font-weight: bold;"
-            "}"
-            "QPushButton:hover {"
-            "background-color: #00C4E5;"
-            "}"
-        )
-        self.btn_open_test_chat.setMaximumWidth(300)
-        self.btn_open_test_chat.clicked.connect(lambda: self._open_side_panel_section("test_chat"))
-        card_layout.addWidget(self.btn_open_test_chat, alignment=Qt.AlignmentFlag.AlignCenter)
-
         layout.addWidget(card)
         layout.addStretch()
 
@@ -1757,38 +1617,6 @@ class AddAccountDialog(QDialog):
         ]
         self.preview_input.setText(random.choice(examples))
 
-    def test_agent_response(self):
-        user_text = self.test_chat_input.text().strip()
-        if not user_text:
-            return
-
-        self.test_chat_input.clear()
-        self._append_test_chat_message(user_text, sender="user")
-
-        if not hasattr(self, 'test_chat_history'):
-            self.test_chat_history = []
-        self.test_chat_history.append({'role': 'user', 'content': user_text})
-
-        ai_service = AIService()
-        try:
-            config = self.get_data()
-            inventory_path = config.get('inventory_path')
-
-            respuesta, _ = ai_service.get_response(
-                user_input=user_text,
-                config=config,
-                inventory_path=inventory_path,
-                chat_history=self.test_chat_history
-            )
-
-            import re
-            respuesta_limpia = re.sub(r'<DATA>.*?</DATA>', '', respuesta, flags=re.DOTALL).strip()
-            self.test_chat_history.append({'role': 'assistant', 'content': respuesta_limpia})
-            self._append_test_chat_message(respuesta_limpia, sender="assistant")
-
-        except Exception as e:
-            self._append_test_chat_message(f"Error IA: {str(e)}", sender="assistant")
-
     def on_page_changed(self, index):
         self.footer.setVisible(index != 0)
         self.footer_prev.setEnabled(index > 0)
@@ -1819,7 +1647,9 @@ class AddAccountDialog(QDialog):
         self.user_input.setText(account_data.get('insta_user', ''))
         self.pass_input.setText("")
         self.store_input.setText(account_data.get('store_name', ''))
-        self.assistant_name_input.setText(account_data.get('assistant_name', ''))
+        self.assistant_name_input.setText(
+            account_data.get('assistant_name', account_data.get('bot_name', account_data.get('business_name', '')))
+        )
         self.description_input.setPlainText(account_data.get('business_data', account_data.get('description', '')))
         self.personality_selected = account_data.get('bot_role', account_data.get('context_type', 'Vendedor Quirúrgico'))
         self.select_personality_card(self.personality_selected)
@@ -2254,5 +2084,30 @@ class AddAccountDialog(QDialog):
             self.current_state['business_hours_text'] = self.business_hours_text_input.text().strip()
         if hasattr(self, 'business_day_checkboxes'):
             self.current_state['business_days'] = [day for day, chk in self.business_day_checkboxes.items() if chk.isChecked()]
+
+        if hasattr(self, 'business_type_combo'):
+            self.current_state['type'] = self.business_type_combo.currentText()
+        if hasattr(self, 'assistant_name_input'):
+            assistant_name = self.assistant_name_input.text().strip()
+            if assistant_name:
+                self.current_state['business_name'] = assistant_name
+            else:
+                self.current_state['business_name'] = self.current_state.get('business_name', self.current_state.get('bot_name', ''))
+            self.current_state['assistant_name'] = self.current_state['business_name']
+            self.current_state['bot_name'] = self.current_state['business_name']
+        if hasattr(self, 'payment_methods_data'):
+            self.current_state['payment_methods'] = [p['method'] for p in self.payment_methods_data]
+            self.current_state['payment_method_details'] = {p['method']: p['detail'] for p in self.payment_methods_data}
+        if hasattr(self, 'start_time'):
+            self.current_state['start'] = self.start_time.time().toString('HH:mm')
+        if hasattr(self, 'end_time'):
+            self.current_state['end'] = self.end_time.time().toString('HH:mm')
+
+        self.current_state['user'] = self.current_state.get('insta_user', '')
+        self.current_state['pass'] = self.current_state.get('insta_pass', '')
+        self.current_state['prompt'] = self.current_state.get('system_prompt_final', self.current_state.get('system_prompt', ''))
+        self.current_state['proxy'] = self.current_state.get('proxy', 'Auto')
+        self.current_state['business_data'] = self.current_state.get('description', '')
+        self.current_state['info_eventos'] = self.current_state.get('info_eventos', self.current_state.get('config_faq', ''))
         self.current_state['system_prompt_final'] = getattr(self, 'hidden_prompt', self.current_state.get('system_prompt', ''))
         return self.current_state
