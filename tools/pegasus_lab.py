@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QVBoxLayout,
     QTabWidget,
+    QFrame,
 )
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QUrl
 from PyQt6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
@@ -277,6 +278,10 @@ class PegasusLab(QWidget):
         label_chat.setStyleSheet("font-weight: bold; font-size: 16px;")
         interaction_layout.addWidget(label_chat)
 
+        self.chat_status_label = QLabel("Estado: listo para simular.")
+        self.chat_status_label.setStyleSheet("font-size: 12px; color: #A0A0A0;")
+        interaction_layout.addWidget(self.chat_status_label)
+
         self.chat_history_widget = QTextEdit()
         self.chat_history_widget.setReadOnly(True)
         self.chat_history_widget.setStyleSheet("font-size: 13px;")
@@ -295,6 +300,10 @@ class PegasusLab(QWidget):
         self.btn_send = QPushButton("Enviar")
         self.btn_send.clicked.connect(self._on_send_clicked)
         input_row.addWidget(self.btn_send)
+
+        self.btn_clear_chat = QPushButton("🧹 Limpiar Chat")
+        self.btn_clear_chat.clicked.connect(self._on_clear_chat)
+        input_row.addWidget(self.btn_clear_chat)
 
         interaction_layout.addLayout(input_row)
 
@@ -367,48 +376,101 @@ class PegasusLab(QWidget):
         self.btn_load_profile.clicked.connect(self.aplicar_configuracion_prueba)
         layout_selectores.addWidget(self.btn_load_profile)
 
-        profiles_layout.addLayout(layout_selectores)
+        selection_frame = QFrame()
+        selection_frame.setStyleSheet(
+            "QFrame{background-color:#0B0B0B; border:1px solid #222222; border-radius:14px;}"
+        )
+        selection_frame_layout = QVBoxLayout(selection_frame)
+        selection_frame_layout.setSpacing(10)
+        selection_frame_layout.setContentsMargins(12, 12, 12, 12)
+        selection_header = QLabel("Perfil y Configuración")
+        selection_header.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
+        selection_frame_layout.addWidget(selection_header)
+        selection_frame_layout.addLayout(layout_selectores)
+        selection_note = QLabel(
+            "Selecciona la cuenta, ajusta el rol y pulsa 'Cargar Configuración' antes de enviar mensajes."
+        )
+        selection_note.setWordWrap(True)
+        selection_note.setStyleSheet("font-size: 12px; color: #A0A0A0;")
+        selection_frame_layout.addWidget(selection_note)
+        profiles_layout.addWidget(selection_frame)
+
+        action_frame = QFrame()
+        action_frame.setStyleSheet(
+            "QFrame{background-color:#0B0B0B; border:1px solid #222222; border-radius:14px;}"
+        )
+        action_frame_layout = QVBoxLayout(action_frame)
+        action_frame_layout.setSpacing(10)
+        action_frame_layout.setContentsMargins(12, 12, 12, 12)
+
+        action_title = QLabel("Escenarios rápidos")
+        action_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
+        action_frame_layout.addWidget(action_title)
 
         self.btn_vendedor_todo = QPushButton("Vendedor Pro")
         self.btn_vendedor_todo.clicked.connect(self._scenario_vendedor_con_todo)
-        profiles_layout.addWidget(self.btn_vendedor_todo)
-
         self.btn_soporte_vacio = QPushButton("Soporte Vacío")
         self.btn_soporte_vacio.clicked.connect(self._scenario_soporte_vacio)
-        profiles_layout.addWidget(self.btn_soporte_vacio)
-
         self.btn_crisis_reclamo = QPushButton("Crisis de Reclamo")
         self.btn_crisis_reclamo.clicked.connect(self._scenario_crisis_reclamo)
-        profiles_layout.addWidget(self.btn_crisis_reclamo)
 
-        profiles_layout.addWidget(QLabel("Escenarios Rápidos"))
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        preset_row.addWidget(self.btn_vendedor_todo)
+        preset_row.addWidget(self.btn_soporte_vacio)
+        preset_row.addWidget(self.btn_crisis_reclamo)
+        action_frame_layout.addLayout(preset_row)
+
+        action_frame_layout.addWidget(QLabel("Casos de prueba"))
         self.btn_interes_caliente = QPushButton("Interés Caliente")
         self.btn_interes_caliente.clicked.connect(self._scenario_interes_caliente)
-        profiles_layout.addWidget(self.btn_interes_caliente)
-
         self.btn_reclamo_roto = QPushButton("Reclamo por Producto Roto")
         self.btn_reclamo_roto.clicked.connect(self._scenario_reclamo_producto_roto)
-        profiles_layout.addWidget(self.btn_reclamo_roto)
-
         self.btn_duda_antiguedad = QPushButton("Duda de Antigüedad")
         self.btn_duda_antiguedad.clicked.connect(self._scenario_duda_antiguedad)
-        profiles_layout.addWidget(self.btn_duda_antiguedad)
 
-        profiles_layout.addWidget(QLabel("Identidad de la cuenta"))
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(8)
+        quick_row.addWidget(self.btn_interes_caliente)
+        quick_row.addWidget(self.btn_reclamo_roto)
+        quick_row.addWidget(self.btn_duda_antiguedad)
+        action_frame_layout.addLayout(quick_row)
+
+        profiles_layout.addWidget(action_frame)
+
+        info_frame = QFrame()
+        info_frame.setStyleSheet(
+            "QFrame{background-color:#0B0B0B; border:1px solid #222222; border-radius:14px;}"
+        )
+        info_frame_layout = QVBoxLayout(info_frame)
+        info_frame_layout.setSpacing(10)
+        info_frame_layout.setContentsMargins(12, 12, 12, 12)
+
+        identity_title = QLabel("Identidad de la cuenta")
+        identity_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
+        info_frame_layout.addWidget(identity_title)
         self.profile_identity_label = QLabel("Ninguna identidad seleccionada")
         self.profile_identity_label.setWordWrap(True)
-        self.profile_identity_label.setStyleSheet("font-size: 12px; color: #DDDDDD; border: 1px solid #222222; padding: 8px; background-color: #0F0F0F;")
-        profiles_layout.addWidget(self.profile_identity_label)
+        self.profile_identity_label.setStyleSheet(
+            "font-size: 12px; color: #DDDDDD; border: 1px solid #222222; padding: 8px; background-color: #0F0F0F;"
+        )
+        info_frame_layout.addWidget(self.profile_identity_label)
 
+        status_title = QLabel("Status de Perfil")
+        status_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
+        info_frame_layout.addWidget(status_title)
         self.profile_status_label = QLabel("Perfil: Ninguno seleccionado")
         self.profile_status_label.setWordWrap(True)
-        self.profile_status_label.setStyleSheet("font-size: 12px; color: #DDDDDD; border: 1px solid #222222; padding: 8px; background-color: #0F0F0F;")
-        profiles_layout.addWidget(QLabel("Status de Perfil"))
-        profiles_layout.addWidget(self.profile_status_label)
+        self.profile_status_label.setStyleSheet(
+            "font-size: 12px; color: #DDDDDD; border: 1px solid #222222; padding: 8px; background-color: #0F0F0F;"
+        )
+        info_frame_layout.addWidget(self.profile_status_label)
 
         self.btn_refresh_account = QPushButton("Refrescar cuenta BD")
         self.btn_refresh_account.clicked.connect(self._refresh_account)
-        profiles_layout.addWidget(self.btn_refresh_account)
+        info_frame_layout.addWidget(self.btn_refresh_account)
+
+        profiles_layout.addWidget(info_frame)
 
         self.tabs.addTab(profiles_tab, "Perfiles de Prueba")
 
@@ -500,6 +562,20 @@ class PegasusLab(QWidget):
             self.account = dict(row)
             self.current_account_id = account_id
             self.selected_preset = None
+            payment_methods = row.get('payment_methods') or []
+            if isinstance(payment_methods, str):
+                try:
+                    payment_methods = json.loads(payment_methods)
+                except Exception:
+                    payment_methods = [item.strip() for item in payment_methods.split(',') if item.strip()]
+
+            payment_method_details = row.get('payment_method_details') or {}
+            if isinstance(payment_method_details, str):
+                try:
+                    payment_method_details = json.loads(payment_method_details)
+                except Exception:
+                    payment_method_details = {}
+
             self.active_test_profile = {
                 'account_id': account_id,
                 'insta_user': row['insta_user'],
@@ -509,6 +585,16 @@ class PegasusLab(QWidget):
                 'inventory_path': row['inventory_path'] or None,
                 'bot_role': forced_role,
                 'business_profile': row.get('business_data') or row.get('description') or row.get('store_name') or '',
+                'country': row.get('country') or 'Venezuela',
+                'language': row.get('language') or 'es',
+                'currency_symbol': row.get('currency_symbol') or 'Bs',
+                'location': row.get('location') or '',
+                'website': row.get('website') or '',
+                'exchange_rate': row.get('exchange_rate') or '',
+                'envios': row.get('envios') or '',
+                'payment_methods': payment_methods,
+                'payment_method_details': payment_method_details,
+                'info_eventos': row.get('info_eventos') or '',
             }
             self.selected_role = forced_role
             self.profile_status_label.setText(
@@ -833,12 +919,20 @@ class PegasusLab(QWidget):
         self._enqueue_message(texto)
 
     def _on_clear_chat(self):
-        self.chat_history.append({'role': 'system', 'content': '[El chat ha sido reiniciado por el usuario]'})
+        self.message_buffer = []
+        self.buffer_timer.stop()
+        self.chat_history_widget.clear()
+        self.chat_history = []
+        self.last_message_was_image = False
+        self._append_chat("Sistema", "[El chat ha sido reiniciado por el usuario]")
+        self.chat_status_label.setText("Estado: chat reiniciado.")
+        self._append_log("[CHAT] Historial de chat limpiado por el usuario.")
 
     def _enqueue_message(self, texto):
         self.message_buffer.append(texto)
         self.chat_history.append({'role': 'user', 'content': texto})
         self._append_chat("Cliente", texto)
+        self.chat_status_label.setText("Estado: mensaje encolado. Esperando respuesta...")
         self._append_log(f"[BUFFER] Añadido: \"{texto}\". Timer reiniciado.")
         self.buffer_timer.stop()
         self.buffer_timer.start()
@@ -925,6 +1019,10 @@ class PegasusLab(QWidget):
             'bot_role': bot_role,
             'business_profile': business_profile,
             'system_prompt': system_prompt,
+            'envios': source.get('envios'),
+            'payment_methods': source.get('payment_methods'),
+            'payment_method_details': source.get('payment_method_details'),
+            'info_eventos': source.get('info_eventos'),
             'bot_mission': self.combo_mission.currentText() if hasattr(self, 'combo_mission') else 'Ventas',
             'current_state': self.combo_state.currentText() if hasattr(self, 'combo_state') else 'CONSULTA',
         }
@@ -993,6 +1091,7 @@ class PegasusLab(QWidget):
         self.chat_history.append({'role': 'assistant', 'content': respuesta_limpia})
         assistant_name = self.account.get('assistant_name', 'Pegasus') if self.account else 'Pegasus'
         self._append_chat(assistant_name, respuesta_limpia)
+        self.chat_status_label.setText("Estado: respuesta recibida.")
 
     def _on_ai_failed(self, error_text):
         self._append_log(f"[GROQ] Error: {error_text}")

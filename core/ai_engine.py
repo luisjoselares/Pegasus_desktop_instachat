@@ -128,9 +128,13 @@ ROLE_ALIASES = {
     "VENDEDOR QUIRÚRGICO": "VENDEDOR",
     "ASISTENTE CREATIVO": "CREATIVO",
     "CREATIVO": "CREATIVO",
+    "MARCA PERSONAL": "CREATIVO",
+    "INFLUENCER": "CREATIVO",
+    "LEAD_GEN": "CREATIVO",
     "SOPORTE": "SOPORTE",
     "SOPORTE PROFESIONAL": "SOPORTE",
     "CONCILIADOR": "CONCILIADOR",
+    "CONCIERGE": "CONCILIADOR",
     "LIBRE": "GENERICO",
     "OTRO": "GENERICO",
     "GENÉRICO": "GENERICO",
@@ -511,6 +515,10 @@ class AIService:
                 details_text = str(payment_method_details)
             if details_text:
                 parts.append(f"Detalles de pago: {details_text}.")
+        if config.get('whatsapp_contacto'):
+            parts.append(f"Contacto de WhatsApp: {config.get('whatsapp_contacto')}.")
+        if config.get('envios'):
+            parts.append(f"Información de envíos: {config.get('envios')}.")
         if info_eventos:
             parts.append(f"Lives, eventos y promociones clave: {info_eventos}.")
 
@@ -542,10 +550,36 @@ class AIService:
             return True
         return False
 
+    def _build_sales_capture_instruction(self, user_input, current_state, bot_mission_lower):
+        text = str(user_input or '').lower()
+        if not text:
+            return ""
+        order_fields = ['nombre', 'cédula', 'cedula', 'teléfono', 'telefono', 'dirección', 'direccion', 'referencia', 'producto', 'pedido']
+        has_order_fields = any(field in text for field in order_fields)
+        has_reference = 'referencia' in text or 'pago' in text or 'transferencia' in text or 'zelle' in text
+        purchase_intent = any(term in text for term in ['quiero comprar', 'confirmo mi compra', 'ya tengo todo listo para pagar', 'quiero los', 'quiero el', 'pedido listo', 'ya está listo para pagar'])
+
+        if any(term in bot_mission_lower for term in ['ventas', 'retail', 'venta']) and has_order_fields and has_reference:
+            return (
+                "\nPEDIDO LISTO PARA REGISTRAR: El cliente ya proporcionó datos de orden y pago. "
+                "No solicites más detalles de producto, talla, color o cantidad si el pedido ya está completo. "
+                "Confirma la orden, menciona que se recibió la referencia y genera el bloque <DATA> con los campos recibidos. "
+                "Si falta algún campo obligatorio, indícalo brevemente, pero si ya está todo, procede a cerrar la venta. "
+                "El bloque <DATA> debe aparecer al final del mensaje y contener al menos cliente, producto, referencia y envío."
+            )
+        if any(term in bot_mission_lower for term in ['ventas', 'retail', 'venta']) and purchase_intent:
+            return (
+                "\nCIERRE COMERCIAL: El cliente expresó intención de compra. "
+                "Responde con un mensaje transaccional, ofrece el método de pago disponible y sugiere contacto por WhatsApp para completar el pedido. "
+                "No dejes la conversación abierta sin un siguiente paso claro."
+            )
+        return ""
+
     def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None, current_state=None, bot_mission=None, chat_history=None):
         config = config or {}
         current_state = current_state or config.get('current_state', 'CONSULTA')
         bot_mission = bot_mission or config.get('bot_mission', 'Ventas')
+        bot_mission_lower = str(bot_mission or '').strip().lower()
         relevant_inventory = []
         rag_context = ""
 
@@ -560,12 +594,40 @@ class AIService:
             relevant_inventory = [line for line in rag_context.splitlines() if line.startswith('-')]
 
         system_prompt = self._build_dynamic_system_prompt(config, base_prompt=config.get('system_prompt') or config.get('business_profile'))
-        if str(bot_mission).strip().lower() == 'ventas':
+        if 'ventas' in bot_mission_lower or 'retail' in bot_mission_lower or 'venta' in bot_mission_lower:
             system_prompt += (
                 f"\nEl cliente actualmente está en el estado: {current_state}.\n\n"
                 "Si el estado es CONSULTA: Responde dudas y ofrece productos. Si el cliente dice que quiere comprar, pídele que confirme el producto y cambia tu tono a transaccional.\n\n"
                 "Si el estado es ESPERANDO_DATOS: Tu ÚNICA misión es pedir Nombre, Banco emisor, Cédula, Teléfono, Dirección y Referencia de Pago."
             )
+
+        if 'concierge' in bot_mission_lower or self._normalize_role_key(config.get('bot_role')) == 'CONCILIADOR':
+            system_prompt += (
+                "\nEres un servicio de agendamiento médico, no un médico ni un profesional de salud. "
+                "Pide SÓLO nombre, teléfono, fecha/hora y preferencia de consulta. "
+                "No solicites antecedentes médicos, no recomiendes tratamientos y no ofrezcas diagnósticos. "
+                "Confirma la cita y da el siguiente paso claro."
+            )
+
+        if 'soporte' in bot_mission_lower or 'support' in bot_mission_lower:
+            system_prompt += (
+                "\nEn soporte, responde con claridad al problema técnico o de servicio. No mezcles promociones, envíos ni ventas con la resolución técnica. "
+                "Si no tienes la información disponible, ofrece asistencia y sugiere contacto humano sin romper el flujo."
+            )
+
+        if 'lead' in bot_mission_lower or 'influencer' in bot_mission_lower or 'coach' in bot_mission_lower:
+            system_prompt += (
+                "\nEn este perfil de captación, tu objetivo es convertir el interés en contacto. Si el cliente pregunta cómo contactarte, ofrece WhatsApp/DM inmediatamente y sugiere una asesoría personalizada. "
+                "No hables de tienda física ni precios; habla de servicios, resultados y conversión directa."
+            )
+
+        lower_input = str(user_input or '').lower()
+        if 'cómo puedo contactarte' in lower_input or 'cómo te contacto' in lower_input or 'cómo te contacto' in lower_input or 'contacto' in lower_input and ('whatsapp' not in lower_input and 'wa.me' not in lower_input):
+            system_prompt += (
+                "\nPREGUNTA DE CONTACTO: El usuario quiere saber cómo contactarte. Responde con el canal de contacto exacto (WhatsApp/DM) y no pidas más calificación."
+            )
+
+        system_prompt += self._build_sales_capture_instruction(user_input, current_state, bot_mission_lower)
 
         system_prompt += "\nREGLA DE NEGOCIACIÓN: Si el cliente pregunta un precio y NO lo tienes en el inventario o contexto, NUNCA digas 'no sé', ni 'dame un momento para consultar'. Responde como un experto: dile que el precio depende de los detalles exactos (tallas, cantidad, diseño), hazle un par de preguntas para perfilar su pedido, y dile que con esa información le darás la cotización exacta. Mantén la venta viva."
         system_prompt += "\nEl bloque <DATA> es un Contrato de Información. Si tienes los campos básicos obligatorios, inclúyelo siempre, incluso si faltan detalles menores. Es preferible capturar la operación con parte de la información pendiente a seguir negociando sin cerrar la venta."
@@ -585,6 +647,11 @@ class AIService:
             location=config.get('location'),
             website=config.get('website'),
             currency_symbol=config.get('currency_symbol'),
+            payment_methods=config.get('payment_methods'),
+            payment_method_details=config.get('payment_method_details'),
+            info_eventos=config.get('info_eventos'),
+            envios=config.get('envios'),
+            bot_mission=bot_mission,
             chat_history=chat_history,
         )
         return response, False
@@ -616,12 +683,13 @@ class AIService:
         professional_keywords = ["clínica", "consultorio", "médico", "medico", "doctor", "abogado", "legal", "psicólogo", "psicologa"]
         return any(term in profile_text for term in professional_keywords)
 
-    def build_final_prompt(self, user_input=None, role=None, business_profile=None, inventory=None, extra_context=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, exchange_rate=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None):
+    def build_final_prompt(self, user_input=None, role=None, business_profile=None, inventory=None, extra_context=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, exchange_rate=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None, envios=None, bot_mission=None):
         resolved_bot_name = self._resolve_bot_name(bot_name)
         resolved_whatsapp = self._resolve_whatsapp_contact(whatsapp_contacto)
         resolved_profile_name = self._resolve_business_profile_name(business_profile)
         resolved_exchange_rate = str(exchange_rate).strip() if exchange_rate else db.get_global_setting("tasa_cambio", "")
         resolved_currency_symbol = str(currency_symbol).strip() if currency_symbol else "la moneda local"
+        bot_mission_lower = str(bot_mission or '').strip().lower()
         lower_input = str(user_input).lower() if user_input else ""
         crisis_mode = self._detect_crisis_mode(user_input)
         image_mode = "[sistema: el cliente envió una imagen/captura]" in lower_input
@@ -699,6 +767,34 @@ class AIService:
                 "RESTRICCIÓN DE TEMAS: Si el cliente menciona política, clima u otros temas externos, no respondas con un 'no' seco ni te presentes de inmediato. Usa una transición suave para volver al servicio principal. Ejemplo: 'Ese es un tema complejo, y la verdad aquí estamos 100% enfocados en planear tu viaje. ¿Te gustaría que retomemos lo del paquete a la playa?'."
             )
 
+        if any(term in lower_input for term in ['hace un mes', 'de nuevo', 'otra vez', 'regresé', 'regreso', 'vuelvo', 'vuelves']):
+            prompt_parts.append(
+                "RECONOCIMIENTO DE RE-ENCUENTRO: El cliente menciona que ya habló contigo antes. Saluda con '¡Hola de nuevo!' o '¡Qué bueno verte de nuevo!', retoma el tema anterior y evita tratarlo como un primer contacto."
+            )
+
+        if 'lead' in bot_mission_lower or 'influencer' in bot_mission_lower or 'coach' in bot_mission_lower or self._normalize_role_key(role) == "CREATIVO":
+            prompt_parts.append(
+                "PERFIL DE MARCA PERSONAL: Responde como la persona responsable del proyecto y no como un asistente genérico. Si el cliente muestra interés, ofrece contacto por WhatsApp o DM en {whatsapp_contacto} y evita hablar de tienda o inventario. Enfócate en servicios, resultados y en convertir interés en una consulta directa."
+            )
+            prompt_parts.append(
+                "Si el cliente pregunta por asesorías, mentorías o colaboraciones, agradece la propuesta y sugiere continuar por el canal oficial para acordar los detalles sin dar información técnica o comercial adicional."
+            )
+
+        if service_role and any(term in lower_input for term in ['receta', 'tomar', 'medicamento', 'dolor de cabeza', 'ibuprofeno', 'analgésico', 'paracetamol']):
+            prompt_parts.append(
+                "RESPUESTA MÉDICA: No des recomendaciones de medicamentos ni remedios. Declina amablemente y ofrece agendar una consulta profesional o contacto humano."
+            )
+
+        if out_of_scope_topics:
+            prompt_parts.append(
+                f"RESTRICCIÓN DE TEMAS: Prefiero no opinar sobre política o temas externos. Aquí estoy para ayudarte con {resolved_profile_name} y sus servicios. Si quieres, podemos retomar el tema del servicio o la compra que necesitas."
+            )
+
+        if price_trigger and ('pesos' in lower_input or 'bs' in lower_input):
+            prompt_parts.append(
+                f"Si el cliente pregunta por pesos o Bs, responde con el equivalente en Bs usando la tasa actual de {resolved_exchange_rate} y di que el precio base es en USD."
+            )
+
         prompt_parts.append(GOLDEN_RULES)
 
         if industry_context:
@@ -732,6 +828,10 @@ class AIService:
         if info_eventos:
             prompt_parts.append(
                 f"Lives, eventos o promociones especiales: {info_eventos}. Si el cliente pregunta por campañas o actividades, responde con esos detalles exactos."
+            )
+        if envios:
+            prompt_parts.append(
+                f"Información de envíos y delivery: {envios}."
             )
 
         if time_context == "CONTINUOUS":
@@ -794,21 +894,29 @@ class AIService:
                 "Solo sugiere WhatsApp si la información no está disponible o si la consulta requiere gestión humana, como agendar una cita."
             )
             prompt_parts.append(f"Ficha de identidad: {business_profile}")
-        if location:
+        location_query = any(term in lower_input for term in ['ubic', 'dónde', 'donde', 'dirección', 'ubicados', 'ubicación'])
+        website_query = any(term in lower_input for term in ['web', 'sitio', 'catálogo', 'catalogo', 'página', 'página web', 'pagina web'])
+
+        if location and location_query:
             prompt_parts.append(
                 f"Ubicación física o zona de atención: {location}. Si el cliente pregunta dónde están ubicados, responde con esa dirección exacta sin rodeos."
             )
-        else:
+        elif not location and location_query and not website_query:
             prompt_parts.append(
-                "No tenemos sede física, atendemos 100% online. Si el cliente pregunta por ubicación, responde exactamente con esa frase."
+                "No contamos con sede física, atendemos 100% online. Si el cliente pregunta por ubicación física, responde exactamente con esa frase."
             )
-        if website:
+
+        if website and website_query:
             prompt_parts.append(
-                f"Sitio web o catálogo online: {website}. Si preguntan por tu sitio o catálogo, responde con esa URL exacta."
+                f"Sitio web o catálogo online: {website}. Si preguntan por tu sitio o catálogo, responde con esa URL exacta y no menciones la sede física."
             )
-        else:
+        elif website and not website_query and not location_query:
             prompt_parts.append(
-                "No tenemos sede física, atendemos 100% online. Si preguntan por sitio web o catálogo, responde exactamente con esa frase."
+                f"Sitio web o catálogo online: {website}."
+            )
+        elif not website and website_query:
+            prompt_parts.append(
+                "No tenemos un sitio web o catálogo en línea. Si preguntan por sitio web, responde exactamente con esa frase."
             )
         if inventory:
             prompt_parts.append(f"Inventario disponible: {inventory}")
@@ -832,7 +940,7 @@ class AIService:
         estimated = max(1, len(text) // 4)
         return estimated
 
-    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None, chat_history=None):
+    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, currency_symbol=None, payment_methods=None, payment_method_details=None, info_eventos=None, envios=None, bot_mission=None, chat_history=None):
         if not self.client:
             self._refresh_client()
 
@@ -867,6 +975,8 @@ class AIService:
             payment_methods=payment_methods,
             payment_method_details=payment_method_details,
             info_eventos=info_eventos,
+            envios=envios,
+            bot_mission=bot_mission,
         )
 
         input_tokens = 0
@@ -958,10 +1068,22 @@ class AIService:
             if self._is_professional_service_account(role=role, business_profile=business_profile):
                 return texto
 
-        if any(palabra in texto_lower for palabra in fuera_contexto):
-            return (
-                f"Lo siento, esa información no la tengo a mano; permíteme consultarlo con el encargado y te responderé con precisión. "
-                f"Mientras tanto, escríbenos por WhatsApp: {resolved_whatsapp}."
-            )
+        out_of_scope = [
+            "clima", "meteorólogo", "veterinario", "salud", "temperatura",
+            "hotel", "seguro", "jurídico", "ley", "bolsa",
+            "inversión", "política", "político", "noticias", "corrupción"
+        ]
+        business_or_service_terms = [
+            "pago", "pago móvil", "pago movil", "transferencia", "zelle", "envío", "envio", "delivery",
+            "whatsapp", "sitio", "web", "dirección", "direccion", "cita", "agenda", "agenda", "referencia",
+            "producto", "pedido", "envío", "envio", "confirmar"
+        ]
+
+        if any(term in texto_lower for term in out_of_scope):
+            if not any(term in texto_lower for term in business_or_service_terms):
+                return (
+                    f"Lo siento, esa información no la tengo a mano; permíteme consultarlo con el encargado y te responderé con precisión. "
+                    f"Mientras tanto, escríbenos por WhatsApp: {resolved_whatsapp}."
+                )
 
         return texto

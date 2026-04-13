@@ -38,6 +38,7 @@ class LocalDBService:
                     system_prompt TEXT DEFAULT '',
                     bot_enabled INTEGER DEFAULT 0,
                     bot_role TEXT DEFAULT '',
+                    bot_mission TEXT DEFAULT 'Ventas',
                     business_name TEXT DEFAULT '',
                     business_data TEXT DEFAULT '',
                     operating_hours TEXT DEFAULT '',
@@ -49,6 +50,8 @@ class LocalDBService:
                     location TEXT DEFAULT '',
                     website TEXT DEFAULT '',
                     exchange_rate TEXT DEFAULT '',
+                    whatsapp_number TEXT DEFAULT '',
+                    envios TEXT DEFAULT '',
                     proxy TEXT DEFAULT 'Auto',
                     schedule_start TEXT DEFAULT '08:00',
                     schedule_end TEXT DEFAULT '18:00',
@@ -60,6 +63,9 @@ class LocalDBService:
                 )
             """)
             try:
+                conn.execute("ALTER TABLE settings ADD COLUMN bot_mission TEXT DEFAULT 'Ventas'")
+                conn.execute("ALTER TABLE settings ADD COLUMN whatsapp_number TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE settings ADD COLUMN envios TEXT DEFAULT ''")
                 conn.execute("ALTER TABLE settings ADD COLUMN payment_methods TEXT DEFAULT '[]'")
                 conn.execute("ALTER TABLE settings ADD COLUMN payment_method_details TEXT DEFAULT '{}'")
             except sqlite3.OperationalError:
@@ -440,6 +446,7 @@ class LocalDBService:
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
                 'bot_role', 'bot_mission', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
                 'country', 'language', 'currency_symbol',
+                'whatsapp_number', 'envios',
                 'payment_methods', 'payment_method_details', 'info_eventos',
                 'location', 'website', 'exchange_rate',
                 'context_type', 'schedule_start', 'schedule_end', 'proxy', 'session_data'
@@ -453,6 +460,7 @@ class LocalDBService:
                 data['prompt'], data.get('bot_role', ''), data.get('bot_mission', 'Ventas'), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
                 data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'),
+                data.get('whatsapp_number', ''), data.get('envios', ''),
                 json.dumps(data.get('payment_methods', [])), json.dumps(data.get('payment_method_details', {})), data.get('info_eventos', ''),
                 data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
                 data['type'], data['start'], data['end'], data['proxy'], data.get('session_data', '')
@@ -491,6 +499,7 @@ class LocalDBService:
             'description', 'bot_role', 'bot_mission', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
             'country', 'language', 'currency_symbol',
+            'whatsapp_number', 'envios',
             'payment_methods', 'payment_method_details', 'info_eventos',
             'location', 'website', 'exchange_rate',
             'context_type', 'schedule_start', 'schedule_end',
@@ -534,6 +543,8 @@ class LocalDBService:
             account.setdefault('country', 'Venezuela')
             account.setdefault('language', 'es')
             account.setdefault('currency_symbol', 'Bs')
+            account.setdefault('whatsapp_number', '')
+            account.setdefault('envios', '')
             account.setdefault('payment_methods', [])
             account.setdefault('payment_method_details', {})
             account.setdefault('info_eventos', '')
@@ -554,6 +565,8 @@ class LocalDBService:
             cuenta.setdefault('country', 'Venezuela')
             cuenta.setdefault('language', 'es')
             cuenta.setdefault('currency_symbol', 'Bs')
+            cuenta.setdefault('whatsapp_number', '')
+            cuenta.setdefault('envios', '')
             cuenta.setdefault('payment_methods', [])
             cuenta.setdefault('payment_method_details', {})
             cuenta.setdefault('info_eventos', '')

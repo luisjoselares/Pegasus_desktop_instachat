@@ -245,7 +245,8 @@ class AddAccountDialog(QDialog):
         self.main_layout.setSizeConstraint(QHBoxLayout.SizeConstraint.SetFixedSize)
 
         self.wizard_container = QFrame()
-        self.wizard_container.setFixedSize(520, 650)
+        self.wizard_container.setMinimumSize(520, 650)
+        self.wizard_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.wizard_container.setObjectName("WizardContainer")
         self.wizard_container.setStyleSheet(
             "QFrame#WizardContainer{background-color:#0B0B0B; border-radius:24px;}"
@@ -314,7 +315,7 @@ class AddAccountDialog(QDialog):
         self.on_page_changed(self.stacked.currentIndex())
         self._create_loading_overlay()
         self._create_side_panel_animation()
-        self.main_layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        self.main_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         self.update_role_logic()
 
         if self.is_edit_mode:
@@ -352,7 +353,7 @@ class AddAccountDialog(QDialog):
         self.side_panel_container = QFrame()
         self.side_panel_container.setObjectName("SidePanelContainer")
         self.side_panel_container.setMinimumWidth(0)
-        self.side_panel_container.setMaximumWidth(270)
+        self.side_panel_container.setMaximumWidth(360)
         self.side_panel_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.side_panel_container.setStyleSheet(
             "QFrame#SidePanelContainer{background-color:#101010; border-radius:20px;}"
@@ -998,7 +999,7 @@ class AddAccountDialog(QDialog):
             self.side_panel_container.setVisible(True)
             self.side_panel_animation.stop()
             self.side_panel_animation.setStartValue(self.side_panel_container.width())
-            self.side_panel_animation.setEndValue(270)
+            self.side_panel_animation.setEndValue(360)
             self.side_panel_animation.start()
         else:
             if self.side_panel_container.width() == 0:

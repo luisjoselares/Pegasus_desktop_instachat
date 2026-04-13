@@ -122,6 +122,10 @@ class InstagramController(QObject):
             changes['structured_identity'] = data['structured_identity']
         if data.get('prompt') is not None:
             changes['system_prompt'] = data['prompt']
+        if data.get('whatsapp_number') is not None:
+            changes['whatsapp_number'] = data['whatsapp_number']
+        if data.get('envios') is not None:
+            changes['envios'] = data['envios']
         if data.get('type') is not None:
             changes['context_type'] = data['type']
         if data.get('country') is not None:
@@ -226,6 +230,7 @@ class InstagramController(QObject):
             'exchange_rate': settings.get('exchange_rate', ''),
             'payment_methods': settings.get('payment_methods', []),
             'info_eventos': settings.get('info_eventos', ''),
+            'envios': settings.get('envios', ''),
             'bot_name': settings.get('assistant_name') or settings.get('bot_name') or settings.get('business_name'),
             'whatsapp_contacto': settings.get('whatsapp_number') or settings.get('whatsapp_contacto', ''),
             'bot_role': settings.get('bot_role') or settings.get('context_type'),
@@ -305,6 +310,7 @@ class InstagramController(QObject):
                     currency_symbol=config.get('currency_symbol'),
                     payment_methods=config.get('payment_methods'),
                     info_eventos=config.get('info_eventos'),
+                    envios=config.get('envios'),
                 )
             except Exception as exc:
                 response = f"Error al procesar el mensaje: {exc}"

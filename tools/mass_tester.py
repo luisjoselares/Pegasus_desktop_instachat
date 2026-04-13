@@ -16,6 +16,36 @@ from groq import Groq
 from core.ai_engine import AIService
 
 
+def normalize_response(text):
+    return re.sub(r'\s+', ' ', str(text or '')).strip().lower()
+
+
+def _match_term(text, term):
+    term = str(term or '').strip().lower()
+    if not term:
+        return False
+    escaped = re.escape(term)
+    if re.search(r'\w', term) and not re.search(r'\W', term):
+        pattern = rf'(?<!\w){escaped}(?!\w)'
+    else:
+        pattern = escaped
+    return bool(re.search(pattern, text))
+
+
+def has_any(text, terms):
+    normalized = normalize_response(text)
+    return any(_match_term(normalized, term) for term in terms)
+
+
+def has_all(text, terms):
+    normalized = normalize_response(text)
+    return all(_match_term(normalized, term) for term in terms)
+
+
+def has_none(text, terms):
+    return not has_any(text, terms)
+
+
 class PegasusAutoTester:
     def __init__(self):
         self.ai = AIService()
@@ -43,6 +73,10 @@ class PegasusAutoTester:
                     'location': '',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Delivery gratis en el centro, $4 a otras zonas.',
+                    'payment_methods': ['Transferencia', 'Zelle'],
+                    'payment_method_details': {'Transferencia': 'Banco XYZ', 'Zelle': 'test@zelle.com'},
+                    'info_eventos': 'Promociones semanales los viernes y envío express disponible.',
                 },
                 'rol': 'VENDEDOR',
                 'bot_mission': 'RETAIL',
@@ -50,7 +84,30 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Estoy viendo algunos productos.', '¿Tienen stock?'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Aceptan pesos?',
-                'condicion_exito': lambda r: (('usd' in r.lower() or 'bolívares' in r.lower() or 'bs' in r.lower()) and not any(term in r.lower() for term in ['pesos', 'de pesos'])) and any(term in r.lower() for term in ['tasa', '3.600.000', '3600000']),
+                'condicion_exito': lambda r: has_any(r, ['usd', 'bolívares', 'bs']) and has_any(r, ['tasa', '3.600.000', '3600000']) and has_none(r, ['pesos', 'de pesos']),
+            },
+            {
+                'id': 'Test RAG - Envíos y Pago Móvil',
+                'cuenta_mock': {
+                    'bot_name': 'Pegasus',
+                    'whatsapp_contacto': 'https://wa.me/584121234567',
+                    'business_profile': 'Tienda especializada con envíos rápidos y varios medios de pago.',
+                    'inventory': 'Bufanda de Lana - Precio: 18 USD - Stock: 12\nGorro de Invierno - Precio: 12 USD - Stock: 20',
+                    'location': 'Centro Comercial Capitán',
+                    'website': '',
+                    'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Delivery disponible en el mismo día dentro de la ciudad.',
+                    'payment_methods': ['Pago móvil', 'Transferencia', 'Zelle'],
+                    'payment_method_details': {'Pago móvil': '04141234567', 'Transferencia': 'Banco X', 'Zelle': 'test@zelle.com'},
+                    'info_eventos': 'Esta semana hay 10% de descuento y envíos exprés gratuitos.',
+                },
+                'rol': 'VENDEDOR',
+                'bot_mission': 'RETAIL',
+                'contexto_rapido': 'RETAIL',
+                'historial_chat': ['Hola', '¿Tienen pago móvil?'],
+                'time_context': 'CONTINUOUS',
+                'mensaje_entrante': 'Quisiera saber si puedo pagar con Pago móvil y cuánto tarda el envío.',
+                'condicion_exito': lambda r: has_any(r, ['pago móvil', 'transferencia', 'zelle']) and has_any(r, ['delivery', 'envío', 'express', 'mismo día']),
             },
             {
                 'id': 'Perfil RETAIL - Venta rápida',
@@ -62,6 +119,10 @@ class PegasusAutoTester:
                     'location': '',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Delivery gratis en la zona norte, $5 para otras zonas.',
+                    'payment_methods': ['Zelle', 'Transferencia'],
+                    'payment_method_details': {'Zelle': 'pagos@zelle.com', 'Transferencia': 'Banco ABC'},
+                    'info_eventos': 'Ofertas de fin de semana y asesorías en vivo los sábados.',
                 },
                 'rol': 'VENDEDOR',
                 'bot_mission': 'RETAIL',
@@ -69,7 +130,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Estoy interesado en un producto.', '¿Tienen disponibilidad?'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Quiero comprar el Producto X y necesito saber cómo puedo pagar.',
-                'condicion_exito': lambda r: 'producto x' in r.lower() and any(term in r.lower() for term in ['pagar', 'pago', 'transferencia', 'whatsapp', 'wa.me']),
+                'condicion_exito': lambda r: has_all(r, ['producto x']) and has_any(r, ['pagar', 'pago', 'transferencia', 'whatsapp', 'wa.me']),
             },
             {
                 'id': 'Perfil RETAIL - Cierre inmediato',
@@ -81,6 +142,10 @@ class PegasusAutoTester:
                     'location': '',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Delivery abierto en toda la ciudad, $7 en otras zonas.',
+                    'payment_methods': ['Transferencia', 'Pago móvil'],
+                    'payment_method_details': {'Transferencia': 'Banco ABC', 'Pago móvil': '04141234567'},
+                    'info_eventos': 'Última semana con envío gratis en pedidos grandes.',
                 },
                 'rol': 'VENDEDOR',
                 'bot_mission': 'RETAIL',
@@ -88,7 +153,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Estoy listo para pagar.', 'Ya tengo la dirección.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Nombre: Juan Pérez. Cédula: V12345678. Teléfono: 04141234567. Dirección: Av. Libertador 456. Referencia de Pago: PAGO123. Producto: Mochila Urbana.',
-                'condicion_exito': lambda r: '<data>' in r.lower() and not any(term in r.lower() for term in ['más detalles', 'detalle', 'tamaño', 'color', 'producto']) and 'referencia' in r.lower(),
+                'condicion_exito': lambda r: '<data>' in r and has_none(r, ['más detalles', 'detalle', 'tamaño', 'color', 'producto']) and has_any(r, ['referencia']),
             },
             {
                 'id': 'Perfil CONCIERGE - Cita médica',
@@ -107,7 +172,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Necesito una consulta médica urgente.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Quisiera agendar una cita médica para el próximo martes. Tengo dolor de cabeza y fiebre.',
-                'condicion_exito': lambda r: 'horario' in r.lower() and not any(term in r.lower() for term in ['lo siento', 'no puedo', 'en este consultorio', 'lamento']),
+                'condicion_exito': lambda r: has_any(r, ['horario']) and has_none(r, ['lo siento', 'no puedo', 'en este consultorio', 'lamento']),
             },
             {
                 'id': 'Perfil LEAD_GEN - Mentoría',
@@ -126,7 +191,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Estoy interesado en crecer como líder.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Quiero una mentoría para mejorar mi visión profesional. ¿Cómo puedo contactarte?',
-                'condicion_exito': lambda r: 'objetivo' in r.lower() and any(term in r.lower() for term in ['whatsapp', 'wa.me', 'contacto']),
+                'condicion_exito': lambda r: has_any(r, ['objetivo']) and has_any(r, ['whatsapp', 'wa.me', 'contacto']),
             },
             {
                 'id': 'Perfil SUPPORT - Consulta técnica',
@@ -145,7 +210,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Mi servicio no funciona desde hace horas.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Mi internet no conecta y necesito ayuda urgente, ¿pueden resolverlo?',
-                'condicion_exito': lambda r: any(term in r.lower() for term in ['soporte', 'ayuda', 'técnico', 'resolución', 'resolver']),
+                'condicion_exito': lambda r: has_any(r, ['soporte', 'ayuda', 'técnico', 'resolución', 'resolver']),
             },
             {
                 'id': 'Test 2 - Soporte Queja Crítica',
@@ -163,7 +228,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Tengo un problema con mi pedido.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Mi pedido llegó roto',
-                'condicion_exito': lambda r: 'wa.me' in r.lower() or 'whatsapp' in r.lower() or 'encargado' in r.lower(),
+                'condicion_exito': lambda r: has_any(r, ['wa.me', 'whatsapp', 'encargado']),
             },
             {
                 'id': 'Test 3 - Largo Plazo Memoria',
@@ -181,7 +246,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hace un mes conversamos sobre un producto.'],
                 'time_context': 'NEW_SESSION',
                 'mensaje_entrante': 'Hola de nuevo',
-                'condicion_exito': lambda r: 'hola de nuevo' in r.lower() and not any(term in r.lower() for term in ['no la tengo', 'no tengo', 'permíteme consultarlo', 'whatsapp', 'ya te respondo', 'no se']),
+                'condicion_exito': lambda r: has_all(r, ['hola de nuevo']) and has_none(r, ['no la tengo', 'no tengo', 'permíteme consultarlo', 'whatsapp', 'ya te respondo', 'no se']),
             },
             {
                 'id': 'Test 4 - Inventario Vacío',
@@ -199,7 +264,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Estoy interesado en un producto.', '¿Tienen stock?'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Precio?',
-                'condicion_exito': lambda r: 'wa.me' in r.lower() or 'whatsapp' in r.lower() or 'encargado' in r.lower() or 'no tengo' in r.lower(),
+                'condicion_exito': lambda r: has_any(r, ['wa.me', 'whatsapp', 'encargado', 'no tengo']),
             },
             {
                 'id': 'Test 5 - Filtro Anti-IA',
@@ -218,7 +283,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Tengo una duda sobre el servicio.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Eres un robot, ¿verdad?',
-                'condicion_exito': lambda r: all(term not in r.lower() for term in ['soy una ia', 'inteligencia artificial', 'robot', 'bot']) and any(term in r.lower() for term in ['encargado', 'soy carlos', 'mi nombre es', 'soy el encargado']),
+                'condicion_exito': lambda r: has_none(r, ['soy una ia', 'inteligencia artificial', 'robot', 'bot']) and has_any(r, ['encargado', 'soy carlos', 'mi nombre es', 'soy el encargado']),
             },
             {
                 'id': 'Test 6 - Influencer Marca Personal',
@@ -237,7 +302,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Me encantan tus rutinas.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¡Tus rutinas me han ayudado mucho! ¿Das asesorías personalizadas?',
-                'condicion_exito': lambda r: ('gracias' in r.lower() or 'agradezco' in r.lower() or 'encantado' in r.lower() or 'me alegra' in r.lower()) and ('wa.me' in r.lower() or 'whatsapp' in r.lower() or 'correo' in r.lower() or 'email' in r.lower()) and 'vender' not in r.lower() and 'producto' not in r.lower(),
+                'condicion_exito': lambda r: has_any(r, ['gracias', 'agradezco', 'encantado', 'me alegra']) and has_any(r, ['wa.me', 'whatsapp', 'correo', 'email']) and has_none(r, ['vender', 'producto']),
             },
             {
                 'id': 'Test 7 - Servicio Clínica Odontológica',
@@ -256,7 +321,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Estoy con dolor dental.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Me duele mucho una muela, ¿qué puedo tomar?',
-                'condicion_exito': lambda r: not any(med in r.lower() for med in ['ibuprofeno', 'paracetamol', 'amoxicilina', 'antibiótico', 'analgésico', 'medicamento']) and ('cita' in r.lower() or 'doctor' in r.lower() or 'odontólogo' in r.lower() or 'whatsapp' in r.lower()),
+                'condicion_exito': lambda r: has_none(r, ['ibuprofeno', 'paracetamol', 'amoxicilina', 'antibiótico', 'analgésico', 'medicamento']) and has_any(r, ['cita', 'doctor', 'odontólogo', 'whatsapp']),
             },
             {
                 'id': 'Test 10 - Fuera de Contexto Seguridad',
@@ -276,7 +341,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Quiero planear un viaje a la playa.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Oye, ¿qué opinas de la situación política actual en el país? Está difícil, ¿no?',
-                'condicion_exito': lambda r: (('prefiero no opinar' in r.lower() or 'no opino' in r.lower() or 'no puedo opinar' in r.lower() or 'no es tema para opinar' in r.lower() or 'no puedo comentar' in r.lower()) and any(term in r.lower() for term in ['viaje', 'agencia', 'paquetes', 'whatsapp', 'ayuda', 'asistencia', 'servicio'])),
+                'condicion_exito': lambda r: has_any(r, ['prefiero no opinar', 'no opino', 'no puedo opinar', 'no es tema para opinar', 'no puedo comentar']) and has_any(r, ['viaje', 'agencia', 'paquetes', 'whatsapp', 'ayuda', 'asistencia', 'servicio']),
             },
             {
                 'id': 'Test 11 - Consulta de Información (Ubicación)',
@@ -296,7 +361,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Quisiera reservar para el fin de semana.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Hola, ¿me podrías decir dónde están ubicados exactamente?',
-                'condicion_exito': lambda r: 'avenida bolívar 123' in r.lower() and 'plaza bolívar' in r.lower() and not any(term in r.lower() for term in ['whatsapp', 'wa.me', 'escríbenos', 'reserva']) and 'vender' not in r.lower(),
+                'condicion_exito': lambda r: has_all(r, ['avenida bolívar 123', 'plaza bolívar']) and has_none(r, ['whatsapp', 'wa.me', 'escríbenos', 'reserva', 'vender']),
             },
             {
                 'id': 'Test 12 - Consulta Específica Influencer',
@@ -316,7 +381,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Vi tu último post y me encantó.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Oye, ¿cuándo es tu próximo live? Se me olvidó.',
-                'condicion_exito': lambda r: (('jueves a las 7pm' in r.lower() or 'jueves a las 7 pm' in r.lower() or 'jueves a las 7' in r.lower()) and any(term in r.lower() for term in ['gracias', 'me alegra', 'con mucho gusto', 'un gusto', 'qué bueno']) and 'tienda' not in r.lower() and 'asistente de' not in r.lower()),
+                'condicion_exito': lambda r: has_any(r, ['jueves a las 7pm', 'jueves a las 7 pm', 'jueves a las 7']) and has_any(r, ['gracias', 'me alegra', 'con mucho gusto', 'un gusto', 'qué bueno']) and has_none(r, ['tienda', 'asistente de']),
             },
             {
                 'id': 'Test 13 - Pregunta de Ubicación (Con datos)',
@@ -335,7 +400,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Quisiera saber dónde los encuentro.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Dónde están ubicados?',
-                'condicion_exito': lambda r: 'calle 4' in r.lower() and 'edificio pegasus' in r.lower(),
+                'condicion_exito': lambda r: has_all(r, ['calle 4', 'edificio pegasus']),
             },
             {
                 'id': 'Test 14 - Pregunta de Ubicación (Vacio)',
@@ -354,7 +419,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Quiero saber si tienen tienda física.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Tienen tienda física?',
-                'condicion_exito': lambda r: 'no contamos con sede física' in r.lower() or 'digital' in r.lower(),
+                'condicion_exito': lambda r: has_any(r, ['no contamos con sede física', 'digital']),
             },
             {
                 'id': 'Test 15a - Consulta de Sitio Web',
@@ -373,7 +438,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Quiero conocer más de sus servicios.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '¿Tienen página web o catálogo online?',
-                'condicion_exito': lambda r: 'https://miempresa.com' in r.lower() and 'no tenemos sede física' not in r.lower(),
+                'condicion_exito': lambda r: has_any(r, ['https://miempresa.com']) and has_none(r, ['no tenemos sede física']),
             },
             {
                 'id': 'Test 15 - Usuario comparte Post',
@@ -471,7 +536,7 @@ class PegasusAutoTester:
                 'historial_chat': ['Hola', 'Te comparto esto.'],
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': '[SISTEMA: El usuario compartió un REEL]',
-                'condicion_exito': lambda r: 'reel' in r.lower() and any(term in r.lower() for term in ['qué buen', 'qué buena', 'interesante', 'me gustó', 'favorito', 'me pareció']),
+                'condicion_exito': lambda r: has_any(r, ['reel']) and has_any(r, ['qué buen', 'qué buena', 'interesante', 'me gustó', 'favorito', 'me pareció']),
             },
             {
                 'id': 'Test 20 - Cierre de Venta Completo',
@@ -484,6 +549,10 @@ class PegasusAutoTester:
                     'location': 'Av. Libertador 456, Caracas',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Envío gratis en Caracas y delivery a todo el país por $6.',
+                    'payment_methods': ['Pago móvil', 'Transferencia'],
+                    'payment_method_details': {'Pago móvil': '04141234567', 'Transferencia': 'Banco XYZ'},
+                    'info_eventos': 'Oferta especial: envío gratis si la compra supera 50 USD.',
                 },
                 'rol': 'VENDEDOR',
                 'contexto_rapido': 'RETAIL',
@@ -493,7 +562,7 @@ class PegasusAutoTester:
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Nombre: Juan Pérez. Cédula: V12345678. Teléfono: 04141234567. Dirección: Av. Libertador 456. Referencia de Pago: PAGO123. Quiero los Zapatos Running.',
                 'espera_json': True,
-                'condicion_exito': lambda r: '<data>' in r.lower() and 'zapatos running' in r.lower(),
+                'condicion_exito': lambda r: '<data>' in r and has_any(r, ['zapatos running']),
             },
             {
                 'id': 'Test 21 - Cierre de Venta con Pago',
@@ -506,6 +575,10 @@ class PegasusAutoTester:
                     'location': 'Centro Comercial Plaza',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Delivery puerta a puerta en 24h con tracking incluido.',
+                    'payment_methods': ['Transferencia', 'Pago móvil'],
+                    'payment_method_details': {'Transferencia': 'Banco ABC', 'Pago móvil': '04141234567'},
+                    'info_eventos': 'Nueva promoción: 10% de descuento en compras mayores a 100 USD.',
                 },
                 'rol': 'VENDEDOR',
                 'contexto_rapido': 'RETAIL',
@@ -515,7 +588,7 @@ class PegasusAutoTester:
                 'time_context': 'CONTINUOUS',
                 'mensaje_entrante': 'Confirmo mi compra de Auriculares Bluetooth. Nombre: Ana Gómez. Cédula: V87654321. Teléfono: 04241234567. Dirección: Calle 10, Local 2. Referencia de Pago: TRANSFER456.',
                 'espera_json': True,
-                'condicion_exito': lambda r: '<data>' in r.lower() and 'auriculares bluetooth' in r.lower(),
+                'condicion_exito': lambda r: '<data>' in r and has_any(r, ['auriculares bluetooth']),
             },
             {
                 'id': 'Test 22 - Cierre de Venta con Envío',
@@ -528,6 +601,10 @@ class PegasusAutoTester:
                     'location': 'Zona Comercial Este',
                     'website': '',
                     'exchange_rate': '1 USD = 3.600.000 Bs',
+                    'envios': 'Retiro en tienda o envío exprés en 4 horas por $5.',
+                    'payment_methods': ['Pago móvil', 'Transferencia', 'Zelle'],
+                    'payment_method_details': {'Pago móvil': '04141239876', 'Transferencia': 'Banco ZYX', 'Zelle': 'test@zelle.com'},
+                    'info_eventos': 'Smart sale: envíos y descuentos especiales en productos seleccionados.',
                 },
                 'rol': 'VENDEDOR',
                 'contexto_rapido': 'RETAIL',
@@ -551,8 +628,9 @@ class PegasusAutoTester:
     def _evaluate_condition(self, case, response):
         if response is None:
             return False, 'No se obtuvo respuesta.'
+        text = normalize_response(response)
         try:
-            valid = case['condicion_exito'](response)
+            valid = case['condicion_exito'](text)
             if valid:
                 return True, ''
             return False, 'Condición de éxito no cumplida.'
@@ -569,6 +647,11 @@ class PegasusAutoTester:
             'location': case['cuenta_mock'].get('location', ''),
             'website': case['cuenta_mock'].get('website', ''),
             'exchange_rate': case['cuenta_mock'].get('exchange_rate', ''),
+            'envios': case['cuenta_mock'].get('envios', 'Delivery gratis en el centro, $3 a otras zonas.'),
+            'payment_methods': case['cuenta_mock'].get('payment_methods', ['Transferencia', 'Zelle']),
+            'payment_method_details': case['cuenta_mock'].get('payment_method_details', {'Transferencia': 'Banco XYZ', 'Zelle': 'test@zelle.com'}),
+            'info_eventos': case['cuenta_mock'].get('info_eventos', 'Promociones semanales los viernes y envíos rápidos.'),
+            'system_prompt': case['cuenta_mock'].get('system_prompt', case['cuenta_mock'].get('business_profile', '')),
         }
         self.active_test_profile = profile
         return profile
@@ -602,7 +685,11 @@ class PegasusAutoTester:
                     'whatsapp_contacto': profile.get('whatsapp_contacto'),
                     'bot_role': profile.get('rol'),
                     'business_profile': profile.get('business_profile'),
-                    'system_prompt': profile.get('business_profile'),
+                    'system_prompt': profile.get('system_prompt'),
+                    'envios': profile.get('envios', ''),
+                    'payment_methods': profile.get('payment_methods', []),
+                    'payment_method_details': profile.get('payment_method_details', {}),
+                    'info_eventos': profile.get('info_eventos', ''),
                     'current_state': case.get('current_state', case.get('estado_inicial', 'CONSULTA')),
                     'bot_mission': case.get('bot_mission', 'Ventas'),
                 }
@@ -619,7 +706,7 @@ class PegasusAutoTester:
             else:
                 response = self.ai.generate_response(
                     user_input=message,
-                    system_prompt=profile.get('business_profile'),
+                    system_prompt=profile.get('system_prompt'),
                     bot_role=profile.get('bot_role'),
                     business_profile=profile.get('business_profile'),
                     inventory=profile.get('inventory'),
@@ -629,6 +716,10 @@ class PegasusAutoTester:
                     location=profile.get('location'),
                     website=profile.get('website'),
                     exchange_rate=profile.get('exchange_rate'),
+                    payment_methods=profile.get('payment_methods', []),
+                    payment_method_details=profile.get('payment_method_details', {}),
+                    info_eventos=profile.get('info_eventos', ''),
+                    envios=profile.get('envios', ''),
                 )
         except Exception as exc:
             return False, None, f'Error IA: {exc}'
