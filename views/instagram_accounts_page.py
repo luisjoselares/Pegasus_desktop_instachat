@@ -3,9 +3,11 @@ from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QFrame, 
                              QLabel, QScrollArea, QHBoxLayout, QMessageBox, QInputDialog, QLineEdit)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer, QTime
-# Importamos el diálogo desde la nueva subcarpeta
+from services.database_service import LocalDBService
+# Importamos los diálogos desde la nueva subcarpeta
 from views.dialogs.instagram_dialog import AddAccountDialog
 from views.dialogs.conversation_dialog import ConversationDialog
+from views.dialogs.alerts_dialog import AlertsDialog
 
 class ClickableFrame(QFrame):
     def __init__(self, callback=None, *args, **kwargs):
@@ -26,6 +28,9 @@ class AccountCard(QFrame):
         super().__init__()
         self.account_id = data.get('id')
         self.controller = controller
+        self.db = LocalDBService()
+        self.account_id = data.get('id')
+        self.alert_count = self.db.get_alert_count(account_id=self.account_id)
         self.is_expanded = False
         self.setObjectName("ModernAccountCard")
 
@@ -120,6 +125,18 @@ class AccountCard(QFrame):
         self.status_label.setStyleSheet("color: #CCCCCC; font-size: 11px; font-weight: 700;")
         header_layout.addWidget(self.status_label)
 
+        self.alert_badge = QLabel(str(self.alert_count) if self.alert_count else "")
+        self.alert_badge.setFixedSize(QSize(24, 24))
+        self.alert_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.alert_badge.setStyleSheet(
+            "background-color: #FF4C4C; color: #FFFFFF; border-radius: 12px; font-size: 11px; font-weight: 700;"
+        )
+        self.alert_badge.setToolTip(
+            f"{self.alert_count} alerta(s) activa(s)" if self.alert_count else "Sin alertas"
+        )
+        self.alert_badge.setVisible(self.alert_count > 0)
+        header_layout.addWidget(self.alert_badge)
+
         self.pause_timer_label = QLabel()
         self.pause_timer_label.setObjectName("AccountPauseInfo")
         self.pause_timer_label.setStyleSheet("color: #FFA500; font-size: 10px; margin-left: 8px;")
@@ -145,6 +162,14 @@ class AccountCard(QFrame):
         self.btn_edit.setToolTip("Editar configuración de la cuenta")
         self.btn_edit.clicked.connect(self._on_edit_clicked)
         header_layout.addWidget(self.btn_edit)
+
+        self.btn_alerts = QPushButton(qta.icon('fa5s.exclamation-triangle', color='#FFCC00'), "")
+        self.btn_alerts.setObjectName("AlertsBtn")
+        self.btn_alerts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_alerts.setFixedSize(QSize(32, 32))
+        self.btn_alerts.setToolTip("Ver alertas de esta cuenta")
+        self.btn_alerts.clicked.connect(self._on_alerts_clicked)
+        header_layout.addWidget(self.btn_alerts)
 
         self.btn_toggle = QPushButton(qta.icon('fa5s.power-off', color='#FFFFFF'), "")
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -445,6 +470,19 @@ class AccountCard(QFrame):
         if confirm == QMessageBox.StandardButton.Yes:
             self.controller.delete_account(self.account_id)
 
+    def _on_alerts_clicked(self):
+        dialog = AlertsDialog(self, account_id=self.account_id, account_name=self.lbl_name.text())
+        dialog.exec()
+        self.refresh_alert_badge()
+
+    def refresh_alert_badge(self):
+        self.alert_count = self.db.get_alert_count(account_id=self.account_id)
+        self.alert_badge.setText(str(self.alert_count) if self.alert_count else "")
+        self.alert_badge.setVisible(self.alert_count > 0)
+        self.alert_badge.setToolTip(
+            f"{self.alert_count} alerta(s) activa(s)" if self.alert_count else "Sin alertas"
+        )
+
     def _prompt_has_critical_phase(self, prompt):
         return "consultar con mi supervisor" in prompt.lower()
 
@@ -479,6 +517,7 @@ class AccountCard(QFrame):
         self.controller.toggle_bot(self.account_id, desired_state)
         self.current_state = desired_state
         self.update_status_ui()
+        self.refresh_alert_badge()
         self.controller.refresh()
 
     def mousePressEvent(self, event):
@@ -505,11 +544,29 @@ class InstagramAccountsPage(QWidget):
         self.btn_add.setObjectName("AddButtonModern")
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add.clicked.connect(self.open_add_dialog)
+
+        self.btn_view_all_alerts = QPushButton(qta.icon('fa5s.bell', color='#FFCC00'), " VER ALERTAS")
+        self.btn_view_all_alerts.setObjectName("ViewAlertsBtn")
+        self.btn_view_all_alerts.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_view_all_alerts.setFixedHeight(40)
+        self.btn_view_all_alerts.setStyleSheet(
+            "QPushButton { background-color: #1A1A1A; border: 1px solid #444; border-radius: 10px; color: #FFCC00; padding: 8px 14px; }"
+            "QPushButton:hover { background-color: #222; }"
+        )
+        self.btn_view_all_alerts.clicked.connect(self.open_global_alerts_dialog)
         
         header_layout.addWidget(self.lbl_page_title)
         header_layout.addStretch()
+        header_layout.addWidget(self.btn_view_all_alerts)
         header_layout.addWidget(self.btn_add)
         self.main_layout.addLayout(header_layout)
+
+        self.alert_summary_label = QLabel("")
+        self.alert_summary_label.setStyleSheet(
+            "color: #FFCC00; font-size: 12px; font-weight: 700; margin-bottom: 12px;"
+        )
+        self.alert_summary_label.setVisible(False)
+        self.main_layout.addWidget(self.alert_summary_label)
 
         self.admin_status_label = QLabel("")
         self.admin_status_label.setStyleSheet("color: #00E5FF; font-size: 11px; margin-bottom: 8px;")
@@ -541,6 +598,48 @@ class InstagramAccountsPage(QWidget):
         
         self.scroll.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll)
+
+        if hasattr(self.controller, 'handoff_alert'):
+            self.controller.handoff_alert.connect(self._on_alert_event)
+        if hasattr(self.controller, 'signal_handoff_alert'):
+            self.controller.signal_handoff_alert.connect(self._on_alert_event)
+        if hasattr(self.controller, 'security_alert'):
+            self.controller.security_alert.connect(self._on_alert_event)
+
+    def _on_alert_event(self, *args):
+        # Si el motor dispara una alerta/handoff, recargamos las tarjetas y la vista de alertas.
+        self.controller.refresh(self.controller.cliente_id)
+        self.update_alert_summary()
+
+    def open_global_alerts_dialog(self):
+        dialog = AlertsDialog(self, account_id=None, account_name=None)
+        dialog.exec()
+
+    def update_alert_summary(self):
+        if not self.controller or not hasattr(self.controller, 'db'):
+            return
+
+        alert_count = self.controller.db.get_alert_count(cliente_id=self.controller.cliente_id)
+        if alert_count:
+            recent_alerts = self.controller.db.get_recent_alerts(cliente_id=self.controller.cliente_id, limit=1)
+            latest = recent_alerts[0] if recent_alerts else None
+            latest_text = ""
+            if latest:
+                latest_text = f" Última: {latest.get('alert_type', 'ALERTA')} @{latest.get('username', '')} ({latest.get('status', 'N/A')})."
+            stats = self.controller.db.get_alert_stats(cliente_id=self.controller.cliente_id)
+            failed = stats.get('FAILED', 0)
+            pending = stats.get('PENDING', 0)
+            summary_suffix = f" {failed} fallida(s)." if failed else ""
+            self.alert_summary_label.setText(
+                f"🔔 {alert_count} alerta(s) de seguridad registrada(s)." + latest_text + summary_suffix
+            )
+            self.alert_summary_label.setVisible(True)
+            if hasattr(self, 'btn_view_all_alerts'):
+                self.btn_view_all_alerts.setText(f"VER ALERTAS ({alert_count})")
+        else:
+            self.alert_summary_label.setVisible(False)
+            if hasattr(self, 'btn_view_all_alerts'):
+                self.btn_view_all_alerts.setText("VER ALERTAS")
 
     def _account_limit_reached(self):
         accounts = self.controller.db.obtener_cuentas(self.controller.cliente_id)
@@ -678,6 +777,7 @@ class InstagramAccountsPage(QWidget):
         # Stretch final para mantener las tarjetas en la parte superior
         self.cards_layout.addStretch()
         self.update_admin_status_label()
+        self.update_alert_summary()
 
         self.btn_add.setEnabled(not self._account_limit_reached())
         self.btn_add.setToolTip(

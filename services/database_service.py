@@ -47,6 +47,9 @@ class LocalDBService:
                     country TEXT DEFAULT 'Venezuela',
                     language TEXT DEFAULT 'es',
                     currency_symbol TEXT DEFAULT 'Bs',
+                    currency_code TEXT DEFAULT '',
+                    currency_name TEXT DEFAULT '',
+                    rag_context TEXT DEFAULT '',
                     location TEXT DEFAULT '',
                     website TEXT DEFAULT '',
                     exchange_rate TEXT DEFAULT '',
@@ -68,6 +71,9 @@ class LocalDBService:
                 conn.execute("ALTER TABLE settings ADD COLUMN envios TEXT DEFAULT ''")
                 conn.execute("ALTER TABLE settings ADD COLUMN payment_methods TEXT DEFAULT '[]'")
                 conn.execute("ALTER TABLE settings ADD COLUMN payment_method_details TEXT DEFAULT '{}'")
+                conn.execute("ALTER TABLE settings ADD COLUMN currency_code TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE settings ADD COLUMN currency_name TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE settings ADD COLUMN rag_context TEXT DEFAULT ''")
             except sqlite3.OperationalError:
                 pass  # Las columnas ya existen, continuamos normal
 
@@ -96,6 +102,37 @@ class LocalDBService:
                     paused_until TEXT
                 )
             """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente_id TEXT DEFAULT '',
+                    account_id INTEGER DEFAULT NULL,
+                    thread_id TEXT,
+                    username TEXT,
+                    alert_type TEXT,
+                    recipient TEXT,
+                    details TEXT,
+                    status TEXT DEFAULT 'PENDING',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            try:
+                conn.execute("ALTER TABLE alerts ADD COLUMN cliente_id TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE alerts ADD COLUMN account_id INTEGER DEFAULT NULL")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE alerts ADD COLUMN status TEXT DEFAULT 'PENDING'")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE alerts ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+            except sqlite3.OperationalError:
+                pass
 
             # 4. Tabla de Estado de Conversación por usuario
             conn.execute("""
@@ -250,6 +287,93 @@ class LocalDBService:
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (cuenta_id, cliente_nombre, referencia, banco, monto_usd, estado))
             conn.commit()
+
+    def insert_alert(self, thread_id, username, alert_type, details, recipient, status="PENDING", cliente_id=None, account_id=None):
+        with self.get_connection() as conn:
+            if cliente_id is not None and account_id is not None:
+                conn.execute(
+                    "INSERT INTO alerts (cliente_id, account_id, thread_id, username, alert_type, recipient, details, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (cliente_id, account_id, thread_id, username, alert_type, recipient, details, status)
+                )
+            elif cliente_id is not None:
+                conn.execute(
+                    "INSERT INTO alerts (cliente_id, thread_id, username, alert_type, recipient, details, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (cliente_id, thread_id, username, alert_type, recipient, details, status)
+                )
+            elif account_id is not None:
+                conn.execute(
+                    "INSERT INTO alerts (account_id, thread_id, username, alert_type, recipient, details, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (account_id, thread_id, username, alert_type, recipient, details, status)
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO alerts (thread_id, username, alert_type, recipient, details, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    (thread_id, username, alert_type, recipient, details, status)
+                )
+            conn.commit()
+
+    def get_recent_alerts(self, cliente_id=None, account_id=None, limit=20):
+        with self.get_connection() as conn:
+            if account_id is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM alerts WHERE account_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (account_id, limit)
+                )
+            elif cliente_id is not None:
+                cursor = conn.execute(
+                    "SELECT * FROM alerts WHERE cliente_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (cliente_id, limit)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
+                )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_alert_count(self, cliente_id=None, account_id=None, status=None):
+        with self.get_connection() as conn:
+            query = "SELECT COUNT(*) AS total FROM alerts"
+            params = []
+            conditions = []
+
+            if account_id is not None:
+                conditions.append("account_id = ?")
+                params.append(account_id)
+            elif cliente_id is not None:
+                conditions.append("cliente_id = ?")
+                params.append(cliente_id)
+
+            if status is not None:
+                conditions.append("status = ?")
+                params.append(status)
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            cursor = conn.execute(query, params)
+            row = cursor.fetchone()
+            return row['total'] if row else 0
+
+    def get_alert_stats(self, cliente_id=None, account_id=None):
+        with self.get_connection() as conn:
+            query = "SELECT status, COUNT(*) AS total FROM alerts"
+            params = []
+            conditions = []
+
+            if account_id is not None:
+                conditions.append("account_id = ?")
+                params.append(account_id)
+            elif cliente_id is not None:
+                conditions.append("cliente_id = ?")
+                params.append(cliente_id)
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            query += " GROUP BY status"
+            cursor = conn.execute(query, params)
+            return {row['status']: row['total'] for row in cursor.fetchall()}
 
     def get_sales(self):
         with self.get_connection() as conn:
@@ -445,7 +569,7 @@ class LocalDBService:
             columns = [
                 'insta_user', 'insta_pass', 'store_name', 'description', 'system_prompt',
                 'bot_role', 'bot_mission', 'business_name', 'business_data', 'operating_hours', 'inventory_path', 'structured_identity',
-                'country', 'language', 'currency_symbol',
+                'country', 'language', 'currency_symbol', 'currency_code', 'currency_name', 'rag_context',
                 'whatsapp_number', 'envios',
                 'payment_methods', 'payment_method_details', 'info_eventos',
                 'location', 'website', 'exchange_rate',
@@ -459,7 +583,7 @@ class LocalDBService:
                 data['user'], data['pass'], data.get('store_name', ''), data.get('description', ''),
                 data['prompt'], data.get('bot_role', ''), data.get('bot_mission', 'Ventas'), data.get('business_name', ''), data.get('business_data', ''),
                 data.get('operating_hours', ''), inventory_path, structured_identity,
-                data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'),
+                data.get('country', 'Venezuela'), data.get('language', 'es'), data.get('currency_symbol', 'Bs'), data.get('currency_code', ''), data.get('currency_name', ''), data.get('rag_context', ''),
                 data.get('whatsapp_number', ''), data.get('envios', ''),
                 json.dumps(data.get('payment_methods', [])), json.dumps(data.get('payment_method_details', {})), data.get('info_eventos', ''),
                 data.get('location', ''), data.get('website', ''), data.get('exchange_rate', ''),
@@ -498,7 +622,7 @@ class LocalDBService:
             'bot_enabled', 'system_prompt', 'insta_pass', 'store_name',
             'description', 'bot_role', 'bot_mission', 'business_name', 'business_data',
             'operating_hours', 'inventory_path', 'structured_identity',
-            'country', 'language', 'currency_symbol',
+            'country', 'language', 'currency_symbol', 'currency_code', 'currency_name', 'rag_context',
             'whatsapp_number', 'envios',
             'payment_methods', 'payment_method_details', 'info_eventos',
             'location', 'website', 'exchange_rate',
@@ -543,14 +667,16 @@ class LocalDBService:
             account.setdefault('country', 'Venezuela')
             account.setdefault('language', 'es')
             account.setdefault('currency_symbol', 'Bs')
+            account.setdefault('currency_code', '')
+            account.setdefault('currency_name', '')
             account.setdefault('whatsapp_number', '')
             account.setdefault('envios', '')
-            account.setdefault('payment_methods', [])
             account.setdefault('payment_method_details', {})
             account.setdefault('info_eventos', '')
             account.setdefault('location', '')
             account.setdefault('website', '')
             account.setdefault('exchange_rate', '')
+            account.setdefault('rag_context', '')
             return account
 
         cuentas = self.obtener_cuentas(cliente_id)
@@ -565,6 +691,8 @@ class LocalDBService:
             cuenta.setdefault('country', 'Venezuela')
             cuenta.setdefault('language', 'es')
             cuenta.setdefault('currency_symbol', 'Bs')
+            cuenta.setdefault('currency_code', '')
+            cuenta.setdefault('currency_name', '')
             cuenta.setdefault('whatsapp_number', '')
             cuenta.setdefault('envios', '')
             cuenta.setdefault('payment_methods', [])
@@ -573,6 +701,7 @@ class LocalDBService:
             cuenta.setdefault('location', '')
             cuenta.setdefault('website', '')
             cuenta.setdefault('exchange_rate', '')
+            cuenta.setdefault('rag_context', '')
         return cuentas
 
     def save_settings(self, account_id, changes, cliente_id=None):

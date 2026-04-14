@@ -68,6 +68,8 @@ class MainWindow(QMainWindow):
             security_service=self.security_service,
             cliente_id=self.current_cliente_id
         )
+        if self.cliente_data and self.cliente_data.get('email'):
+            self.insta_controller.set_owner_email(self.cliente_data.get('email'))
         self.main_controller = MainController(
             self,
             cliente_data,
@@ -80,6 +82,8 @@ class MainWindow(QMainWindow):
         self.insta_controller.set_main_controller(self.main_controller)
         self.main_controller.set_instagram_controller(self.insta_controller)
         self.insta_controller.handoff_alert.connect(self.show_handoff_alert)
+        if hasattr(self.insta_controller, 'security_alert'):
+            self.insta_controller.security_alert.connect(self.show_security_alert)
 
         self.accounts_page = InstagramAccountsPage(self.insta_controller, main_window=self)
         self.insta_controller.set_view(self.accounts_page, self.current_cliente_id)
@@ -141,6 +145,15 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'log_dialog') and self.log_dialog:
             self.log_dialog.log_console.append(f"[ALERTA VISUAL] Handoff detectado para @{username}. Se activará redirección en 3 min.")
         QMessageBox.information(self, "Handoff detectado", f"Handoff detectado en @{username}. El mensaje esperará 3 minutos antes de la redirección.")
+
+    def show_security_alert(self, thread_id, username, message):
+        if hasattr(self, 'log_dialog') and self.log_dialog:
+            self.log_dialog.log_console.append(f"[ALERTA DE SEGURIDAD] @{username}. Se notificó por correo y se registró la alerta.")
+        QMessageBox.warning(
+            self,
+            "Alerta de seguridad",
+            f"Se detectó una alerta crítica para @{username}. Se intentó notificar al dueño por correo."
+        )
 
     def setup_sidebar(self):
         self.sidebar = QFrame()

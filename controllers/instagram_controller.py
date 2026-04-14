@@ -11,6 +11,7 @@ class InstagramController(QObject):
     configuration_updated = pyqtSignal()
     handoff_alert = pyqtSignal(str, str)
     signal_handoff_alert = pyqtSignal(str)
+    security_alert = pyqtSignal(str, str, str)
     """
     Controlador Senior para la gestión de cuentas de Instagram.
     Actúa como puente entre LocalDBService y la interfaz modernizada de Pegasus.
@@ -22,6 +23,7 @@ class InstagramController(QObject):
         self.engine = engine if engine is not None else InstagramService(db_service=db_service)
         self.security_service = security_service
         self.cliente_id = cliente_id
+        self.owner_email = None
         self.main_controller = None
         self.active_handoff_timers = {}
         self.alerta_venta = QSoundEffect()
@@ -36,6 +38,11 @@ class InstagramController(QObject):
     def set_main_controller(self, controller):
         self.main_controller = controller
 
+    def set_owner_email(self, email):
+        self.owner_email = email
+        if hasattr(self.engine, 'set_owner_email'):
+            self.engine.set_owner_email(email)
+
     def set_licencia_id(self, licencia_id):
         self.engine.set_licencia_id(licencia_id)
 
@@ -49,6 +56,12 @@ class InstagramController(QObject):
             self.cliente_id = cliente_id
             if hasattr(self.engine, 'set_cliente_id'):
                 self.engine.set_cliente_id(cliente_id)
+
+        if hasattr(self.engine, 'set_security_alert_callback'):
+            self.engine.set_security_alert_callback(
+                lambda tid, username, message: self.security_alert.emit(tid, username, message)
+            )
+
         self.refresh(cliente_id)
 
     def refresh(self, cliente_id=None):
@@ -134,6 +147,12 @@ class InstagramController(QObject):
             changes['language'] = data['language']
         if data.get('currency_symbol') is not None:
             changes['currency_symbol'] = data['currency_symbol']
+        if data.get('currency_code') is not None:
+            changes['currency_code'] = data['currency_code']
+        if data.get('currency_name') is not None:
+            changes['currency_name'] = data['currency_name']
+        if data.get('rag_context') is not None:
+            changes['rag_context'] = data['rag_context']
         if data.get('location') is not None:
             changes['location'] = data['location']
         if data.get('website') is not None:
@@ -225,9 +244,12 @@ class InstagramController(QObject):
             'country': settings.get('country', 'Venezuela'),
             'language': settings.get('language', 'es'),
             'currency_symbol': settings.get('currency_symbol', 'Bs'),
+            'currency_code': settings.get('currency_code', ''),
+            'currency_name': settings.get('currency_name', ''),
             'location': settings.get('location', ''),
             'website': settings.get('website', ''),
             'exchange_rate': settings.get('exchange_rate', ''),
+            'rag_context': settings.get('rag_context', ''),
             'payment_methods': settings.get('payment_methods', []),
             'info_eventos': settings.get('info_eventos', ''),
             'envios': settings.get('envios', ''),

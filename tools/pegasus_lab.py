@@ -30,6 +30,7 @@ from PyQt6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
 from groq import Groq
 from core.ai_engine import AIService, ROLE_DNA
 from services.database_service import db
+from services.mailer_service import MailerService
 from views.dialogs.instagram_dialog import AddAccountDialog
 
 
@@ -236,6 +237,7 @@ class PegasusLab(QWidget):
             print('[ERROR] No se encontró la GROQ_API_KEY. Asegúrate de configurar tu archivo .env')
             self.ai.current_key = None
             self.ai.client = None
+        self.mailer = MailerService()
         self.account = None
         self.accounts = []
         self.manual_accounts = MANUAL_ACCOUNTS
@@ -506,6 +508,55 @@ class PegasusLab(QWidget):
         logs_layout.addWidget(self.btn_stress_roles)
 
         self.tabs.addTab(logs_tab, "Logs y Stress")
+
+        notifications_tab = QWidget()
+        notifications_layout = QVBoxLayout(notifications_tab)
+        notifications_layout.setSpacing(10)
+
+        label_notifications = QLabel("Pruebas de Notificación")
+        label_notifications.setStyleSheet("font-weight: bold; font-size: 16px;")
+        notifications_layout.addWidget(label_notifications)
+
+        self.txt_notify_email = QLineEdit()
+        self.txt_notify_email.setPlaceholderText("Correo de destino para prueba de notificación")
+        self.txt_notify_email.setStyleSheet("background-color: #111111; border: 1px solid #222222; padding: 8px; color: white;")
+        notifications_layout.addWidget(self.txt_notify_email)
+
+        self.txt_notify_subject = QLineEdit("Código de verificación Pegasus")
+        self.txt_notify_subject.setPlaceholderText("Asunto del correo")
+        self.txt_notify_subject.setStyleSheet("background-color: #111111; border: 1px solid #222222; padding: 8px; color: white;")
+        notifications_layout.addWidget(self.txt_notify_subject)
+
+        self.txt_notify_body = QTextEdit("Este es un correo de prueba que contiene un código de validación para tu cuenta Pegasus.")
+        self.txt_notify_body.setStyleSheet("background-color: #111111; border: 1px solid #222222; padding: 10px; color: white;")
+        notifications_layout.addWidget(self.txt_notify_body, stretch=2)
+
+        send_row = QHBoxLayout()
+        send_row.setSpacing(10)
+        self.btn_send_notification = QPushButton("Enviar prueba Resend")
+        self.btn_send_notification.clicked.connect(self._on_send_notification_clicked)
+        send_row.addWidget(self.btn_send_notification)
+
+        self.btn_fill_owner_email = QPushButton("Usar EMAIL DE ALERTA")
+        self.btn_fill_owner_email.clicked.connect(self._fill_owner_email)
+        send_row.addWidget(self.btn_fill_owner_email)
+
+        notifications_layout.addLayout(send_row)
+
+        self.notify_status_label = QLabel("Estado: listo para enviar notificación.")
+        self.notify_status_label.setStyleSheet("font-size: 12px; color: #A0A0A0;")
+        notifications_layout.addWidget(self.notify_status_label)
+
+        self.lbl_notification_code = QLabel("Código generado: n/a")
+        self.lbl_notification_code.setStyleSheet("font-size: 12px; color: #DDDDDD;")
+        notifications_layout.addWidget(self.lbl_notification_code)
+
+        api_info = QLabel(f"Resend API: {'Configurada' if self.mailer.resend_api_key else 'No configurada'}")
+        api_info.setStyleSheet("font-size: 12px; color: #A0E0FF;")
+        notifications_layout.addWidget(api_info)
+
+        notifications_layout.addStretch()
+        self.tabs.addTab(notifications_tab, "Notificaciones")
 
         main_layout.addWidget(self.tabs)
 
@@ -817,6 +868,36 @@ class PegasusLab(QWidget):
     def _append_log(self, mensaje):
         timestamp = datetime.now().strftime('%H:%M:%S')
         self.audit_log.append(f"[{timestamp}] {mensaje}")
+
+    def _fill_owner_email(self):
+        email = os.getenv('OWNER_ALERT_EMAIL') or os.getenv('ALERT_EMAIL') or ''
+        if email:
+            self.txt_notify_email.setText(email)
+            self.notify_status_label.setText(f"Email de alerta cargado: {email}")
+            self._append_log(f"[NOTIF] Email de alerta cargado desde entorno: {email}")
+        else:
+            self.notify_status_label.setText("No hay OWNER_ALERT_EMAIL ni ALERT_EMAIL configurados.")
+            self._append_log("[NOTIF] No se encontró email de alerta en variables de entorno.")
+
+    def _on_send_notification_clicked(self):
+        email_dest = self.txt_notify_email.text().strip()
+        if not email_dest:
+            self.notify_status_label.setText("Por favor ingresa un correo de destino válido.")
+            self._append_log("[NOTIF] Intento de envío sin correo de destino.")
+            return
+
+        subject = self.txt_notify_subject.text().strip() or "Código de verificación Pegasus"
+        body = self.txt_notify_body.toPlainText().strip() or "Este es un correo de prueba que contiene un código de validación para tu cuenta Pegasus."
+        codigo = self.mailer.enviar_otp(email_dest, subject, body)
+
+        if codigo:
+            self.lbl_notification_code.setText(f"Código generado: {codigo}")
+            self.notify_status_label.setText(f"Correo enviado a {email_dest}. Código generado: {codigo}")
+            self._append_log(f"[NOTIF] Prueba Resend enviada a {email_dest}. Código: {codigo}")
+        else:
+            self.lbl_notification_code.setText("Código generado: n/a")
+            self.notify_status_label.setText("Fallo el envío de la notificación. Revisa la configuración de Resend.")
+            self._append_log(f"[NOTIF] Error enviando prueba Resend a {email_dest}.")
 
     def _inject_system_marker(self, marker_text):
         self._append_chat("Sistema", marker_text)

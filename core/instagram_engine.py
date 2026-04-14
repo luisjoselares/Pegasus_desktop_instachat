@@ -23,6 +23,7 @@ import instagrapi.extractors as extractors
 import instagrapi.mixins.direct as direct_mixin
 from instagrapi.exceptions import ChallengeRequired, FeedbackRequired, RateLimitError, ClientConnectionError, UserNotFound, DirectThreadNotFound
 from services.database_service import db
+from services.mailer_service import MailerService
 from core.ai_engine import AIService, HANDOFF_PHRASE
 
 class InstagramService:
@@ -30,11 +31,15 @@ class InstagramService:
         self.cl = Client()
         self.ai = AIService()
         self.ai.set_trial_status_callback(self._on_trial_status)
+        self.mailer = MailerService()
+        self.current_account_settings = None
         self.is_running = False
         self.session_file = None
         self.log_callback = None
         self.handoff_callback = None
         self.rescue_callback = None
+        self.security_alert_callback = None
+        self.owner_email = None
         self.last_profile_error = None
         self.security_service = None
         self.initial_session_data = None
@@ -117,6 +122,12 @@ class InstagramService:
 
     def set_rescue_callback(self, callback_func):
         self.rescue_callback = callback_func
+
+    def set_security_alert_callback(self, callback_func):
+        self.security_alert_callback = callback_func
+
+    def set_owner_email(self, email):
+        self.owner_email = email
 
     def set_session_ready_callback(self, callback_func):
         self.session_ready_callback = callback_func
@@ -441,6 +452,17 @@ class InstagramService:
                 return True
 
         if thread_status and thread_status.get('last_message_id') == self._get_message_id(last_msg):
+            try:
+                last_processed = thread_status.get('last_processed_at')
+                if last_processed:
+                    processed_age = datetime.now() - datetime.fromisoformat(str(last_processed))
+                    if processed_age > timedelta(hours=24):
+                        self._ui_log("🧹 Ignorando chat antiguo ya procesado hace más de 24 horas.")
+                        if account_settings:
+                            db.actualizar_log(account_settings['id'], "🧹 Ignorando chat antiguo ya procesado hace más de 24 horas.")
+                        return True
+            except Exception:
+                pass
             self._ui_log("⏳ El hilo ya fue procesado para este mensaje. Esperando actualización de lectura.")
             return True
 
@@ -591,6 +613,7 @@ class InstagramService:
         else:
             self._ui_log("⚠️ No se encontró configuración de cuenta para el usuario de login. El bot continuará sin ajustes específicos.")
 
+        self.current_account_settings = account_settings
         self.account_system_prompt = self._build_account_system_prompt(account_settings)
         self._check_local_ip_security(account_settings)
         self._apply_proxy_logic(None)
@@ -890,10 +913,99 @@ class InstagramService:
             f" Contenido: {respuesta}"
         )
         self._ui_log(f"🚨 NOTIFICACIÓN: {mensaje}")
-        # TODO: Implementar notificaciones reales de Pegasus (correo/enviar alerta al dashboard)
+
+        destinatario = self.owner_email or os.getenv('OWNER_ALERT_EMAIL') or os.getenv('ALERT_EMAIL')
+        if not destinatario:
+            self._ui_log("⚠️ No se envió alerta por correo: falta OWNER_ALERT_EMAIL, ALERT_EMAIL o correo de usuario en la sesión.")
+            return
+
+        asunto = "Pegasus Alerta de Seguridad - Respuesta Crítica"
+        cuerpo = (
+            f"Se ha activado una alerta de seguridad para la cuenta de Instagram del hilo {tid}.\n"
+            f"Usuario: @{user}\n"
+            f"Respuesta generada:\n{respuesta}\n\n"
+            "Revisa el bot y la configuración de la cuenta inmediatamente."
+        )
+
+        estado_alerta = "NOT_CONFIGURED"
+        if destinatario:
+            try:
+                enviado = self.mailer.enviar_otp(destinatario, asunto, cuerpo)
+                if enviado:
+                    estado_alerta = "SENT"
+                    self._ui_log(f"✅ Alerta enviada por correo a {destinatario}.")
+                else:
+                    estado_alerta = "FAILED"
+                    self._ui_log(f"⚠️ No se pudo enviar la alerta a {destinatario}.")
+            except Exception as e:
+                estado_alerta = "FAILED"
+                self._ui_log(f"⚠️ Error al enviar alerta de seguridad: {e}")
+
+        try:
+            cliente_id = self.current_account_settings.get('cliente_id') if self.current_account_settings else None
+            account_id = self.current_account_settings.get('id') if self.current_account_settings else None
+            db.insert_alert(
+                thread_id=tid,
+                username=user,
+                alert_type='SECURITY_PANIC',
+                details=respuesta,
+                recipient=destinatario or '',
+                status=estado_alerta,
+                cliente_id=cliente_id,
+                account_id=account_id,
+            )
+        except Exception as db_error:
+            self._ui_log(f"⚠️ Error guardando alerta en DB: {db_error}")
+
+        if self.security_alert_callback:
+            try:
+                self.security_alert_callback(tid, user, respuesta)
+            except Exception as callback_error:
+                self._ui_log(f"⚠️ Error en callback de alerta de seguridad: {callback_error}")
+
+    def _get_proxy_provider_url(self):
+        return (
+            os.getenv('SMARTPROXY_URL')
+            or os.getenv('WEBSHARE_URL')
+            or os.getenv('PROXY_PROVIDER_URL')
+        )
+
+    def _get_active_account_count(self):
+        if self.cliente_id is not None:
+            return len(db.obtener_cuentas(self.cliente_id))
+        return len(db.obtener_cuentas())
 
     def _apply_proxy_logic(self, account_id):
-        # TODO: Implementar Smartproxy/Webshare cuando el usuario exceda las 2 cuentas en la Fase 2
+        account_settings = self.current_account_settings
+        if account_id is not None:
+            account_settings = db.get_account_by_id(account_id, self.cliente_id)
+
+        if account_settings:
+            proxy = account_settings.get('proxy')
+            if proxy and proxy.lower() != 'auto':
+                proxy_url = proxy if proxy.startswith('http') else f'http://{proxy}'
+                try:
+                    self.cl.set_proxy(proxy_url)
+                    self._ui_log(f"🔒 Seguridad de IP: usando proxy personalizado ({proxy_url}).")
+                    return proxy_url
+                except Exception as e:
+                    self._ui_log(f"⚠️ Error aplicando el proxy personalizado: {e}")
+
+        account_count = self._get_active_account_count()
+        if account_count > 2:
+            provider_url = self._get_proxy_provider_url()
+            if provider_url:
+                proxy_url = provider_url if provider_url.startswith('http') else f'http://{provider_url}'
+                try:
+                    self.cl.set_proxy(proxy_url)
+                    self._ui_log(f"🌐 Smartproxy activo: usando proveedor automático ({proxy_url}) para {account_count} cuentas.")
+                    return proxy_url
+                except Exception as e:
+                    self._ui_log(f"⚠️ No se pudo activar Smartproxy: {e}")
+            else:
+                self._ui_log("⚠️ Se requieren SMARTPROXY_URL / WEBSHARE_URL para activar proxy automático cuando hay más de 2 cuentas.")
+
+        self._ui_log("🔓 Proxy no forzado: usando IP local o proxy ya configurado por el cliente.")
         return None
 
     def _log_interaction(self, tid, user, msg, resp):

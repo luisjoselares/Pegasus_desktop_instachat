@@ -1,8 +1,9 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QHeaderView, QMessageBox)
+                             QHeaderView, QMessageBox, QAbstractItemView)
 from services.security_service import SecurityService
 from services.database_service import LocalDBService
+from views.dialogs.alerts_dialog import AlertsDialog
 from PyQt6.QtCore import Qt
 
 class AccountsPage(QWidget):
@@ -11,6 +12,7 @@ class AccountsPage(QWidget):
         self.setObjectName("AccountsPage") # Para vinculación con QSS
         self.db = LocalDBService()
         self.cipher = SecurityService(hwid)
+        self.account_ids = []
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -43,6 +45,12 @@ class AccountsPage(QWidget):
         btn_save_tasa.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save_tasa.clicked.connect(self._guardar_tasa_global)
         tasa_layout.addWidget(btn_save_tasa)
+
+        self.btn_ver_alertas = QPushButton("Ver alertas")
+        self.btn_ver_alertas.setObjectName("PrimaryBtn")
+        self.btn_ver_alertas.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ver_alertas.clicked.connect(self.mostrar_alertas)
+        tasa_layout.addWidget(self.btn_ver_alertas)
 
         current_tasa = self.db.get_global_setting('tasa_cambio', '')
         if current_tasa:
@@ -78,6 +86,8 @@ class AccountsPage(QWidget):
         self.tabla.setHorizontalHeaderLabels(["USUARIO", "SEGURIDAD", "PROXY / IP", "ACCIONES"])
         self.tabla.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.tabla.setAlternatingRowColors(True)
+        self.tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tabla.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         layout.addWidget(self.tabla)
         
         self.cargar_tabla()
@@ -114,10 +124,12 @@ class AccountsPage(QWidget):
 
     def cargar_tabla(self):
         cuentas = self.db.obtener_cuentas()
+        self.account_ids = []
         self.tabla.setRowCount(len(cuentas))
         
         for i, cuenta in enumerate(cuentas):
             id_c = cuenta.get('id')
+            self.account_ids.append(id_c)
             user = cuenta.get('insta_user', '')
             proxy = cuenta.get('proxy', '')
 
@@ -158,3 +170,17 @@ class AccountsPage(QWidget):
             "Pegasus",
             f"La tasa global se ha actualizado a {value} y se aplicará a todos los bots."
         )
+
+    def mostrar_alertas(self):
+        selected_row = self.tabla.currentRow()
+        account_id = None
+        account_name = None
+        if selected_row >= 0 and selected_row < len(self.account_ids):
+            account_id = self.account_ids[selected_row]
+            account_name = self.tabla.item(selected_row, 0).text() if self.tabla.item(selected_row, 0) else None
+        elif len(self.account_ids) == 1:
+            account_id = self.account_ids[0]
+            account_name = self.tabla.item(0, 0).text() if self.tabla.item(0, 0) else None
+
+        dialog = AlertsDialog(self, account_id=account_id, account_name=account_name)
+        dialog.exec()

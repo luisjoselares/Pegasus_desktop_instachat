@@ -101,6 +101,9 @@ class AddAccountDialog(QDialog):
             "country": self.account_data.get("country", "Venezuela"),
             "language": self.account_data.get("language", "Español"),
             "currency_symbol": self.account_data.get("currency_symbol", "$"),
+            "currency_code": self.account_data.get("currency_code", ""),
+            "currency_name": self.account_data.get("currency_name", ""),
+            "rag_context": self.account_data.get("rag_context", ""),
             "location": self.account_data.get("location", ""),
             "website": self.account_data.get("website", ""),
             "envios": self.account_data.get("envios", ""),
@@ -1416,6 +1419,36 @@ class AddAccountDialog(QDialog):
         self.txt_currency_symbol.addAction(qta.icon('fa5s.money-bill-wave', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
         location_layout.addWidget(self.txt_currency_symbol)
 
+        self.txt_currency_code_label = QLabel("¿Cuál es el código de la moneda local?")
+        self.txt_currency_code_label.setProperty("class", "QuestionLabel")
+        self.txt_currency_code_label.setWordWrap(True)
+        location_layout.addWidget(self.txt_currency_code_label)
+        self.txt_currency_code = QLineEdit()
+        self.txt_currency_code.setPlaceholderText("Ej: COP")
+        self.txt_currency_code.setMaximumWidth(280)
+        self.txt_currency_code.addAction(qta.icon('fa5s.tag', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_currency_code)
+
+        self.txt_currency_name_label = QLabel("¿Cómo llamas a la moneda local?")
+        self.txt_currency_name_label.setProperty("class", "QuestionLabel")
+        self.txt_currency_name_label.setWordWrap(True)
+        location_layout.addWidget(self.txt_currency_name_label)
+        self.txt_currency_name = QLineEdit()
+        self.txt_currency_name.setPlaceholderText("Ej: Pesos colombianos")
+        self.txt_currency_name.setMaximumWidth(280)
+        self.txt_currency_name.addAction(qta.icon('fa5s.coins', color='#00E5FF'), QLineEdit.ActionPosition.LeadingPosition)
+        location_layout.addWidget(self.txt_currency_name)
+
+        self.txt_rag_context_label = QLabel("Contexto adicional para respuestas (RAG)")
+        self.txt_rag_context_label.setProperty("class", "QuestionLabel")
+        self.txt_rag_context_label.setWordWrap(True)
+        location_layout.addWidget(self.txt_rag_context_label)
+        self.txt_rag_context = QTextEdit()
+        self.txt_rag_context.setPlaceholderText("Describe información clave, productos destacados o datos que el bot debe usar como contexto adicional.")
+        self.txt_rag_context.setMaximumWidth(280)
+        self.txt_rag_context.setFixedHeight(100)
+        location_layout.addWidget(self.txt_rag_context)
+
         layout.addWidget(self.location_frame)
 
         self.txt_envios_label = QLabel("¿Cómo manejas los envíos o el delivery?")
@@ -1680,6 +1713,12 @@ class AddAccountDialog(QDialog):
             self.txt_language.setText(self.config_language)
         if hasattr(self, 'txt_currency_symbol'):
             self.txt_currency_symbol.setText(account_data.get('currency_symbol', 'Bs'))
+        if hasattr(self, 'txt_currency_code'):
+            self.txt_currency_code.setText(account_data.get('currency_code', ''))
+        if hasattr(self, 'txt_currency_name'):
+            self.txt_currency_name.setText(account_data.get('currency_name', ''))
+        if hasattr(self, 'txt_rag_context'):
+            self.txt_rag_context.setPlainText(account_data.get('rag_context', ''))
         if hasattr(self, 'txt_envios'):
             self.txt_envios.setText(account_data.get('envios', ''))
         self.config_payments = account_data.get('payment_methods_text', account_data.get('config_payments', ''))
@@ -2075,6 +2114,12 @@ class AddAccountDialog(QDialog):
             self.current_state['location'] = self.txt_ubicacion.text().strip()
         if hasattr(self, 'txt_website'):
             self.current_state['website'] = self.txt_website.text().strip()
+        if hasattr(self, 'txt_currency_code'):
+            self.current_state['currency_code'] = self.txt_currency_code.text().strip()
+        if hasattr(self, 'txt_currency_name'):
+            self.current_state['currency_name'] = self.txt_currency_name.text().strip()
+        if hasattr(self, 'txt_rag_context'):
+            self.current_state['rag_context'] = self.txt_rag_context.toPlainText().strip()
         if hasattr(self, 'txt_envios'):
             self.current_state['envios'] = self.txt_envios.text().strip()
         if hasattr(self, 'side_country_combo'):

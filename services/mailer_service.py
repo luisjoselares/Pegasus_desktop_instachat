@@ -1,6 +1,7 @@
 import os
 import random
 import smtplib
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
@@ -8,10 +9,12 @@ from dotenv import load_dotenv
 class MailerService:
     def __init__(self):
         load_dotenv()
+        self.resend_api_key = os.getenv("RESEND_API_KEY")
+        self.resend_from = os.getenv("RESEND_FROM_EMAIL") or os.getenv("SMTP_USER") or "no-reply@pegasus.com"
         self.smtp_user = os.getenv("SMTP_USER")
         self.smtp_pass = os.getenv("SMTP_PASS")
-        self.smtp_server = "smtp.gmail.com"
-        self.smtp_port = 465
+        self.smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        self.smtp_port = int(os.getenv("SMTP_PORT", 465))
 
     def _generar_html(self, asunto, mensaje_texto, otp):
         """Plantilla centralizada para todos los correos de Pegasus."""
@@ -37,23 +40,65 @@ class MailerService:
         </html>
         """
 
-    def enviar_otp(self, email_dest, asunto_corto, mensaje_cuerpo):
-        """Envía un OTP y devuelve el código generado o None si falla."""
-        otp = str(random.randint(100000, 999999))
-        
+    def _send_via_resend(self, email_dest, subject, html_content):
+        if not self.resend_api_key:
+            return False
+
+        payload = {
+            "from": self.resend_from,
+            "to": email_dest,
+            "subject": subject,
+            "html": html_content,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.resend_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.post(
+                "https://api.resend.com/emails",
+                json=payload,
+                headers=headers,
+                timeout=15,
+            )
+            if response.status_code in (200, 202):
+                return True
+            print(f"Resend API error {response.status_code}: {response.text}")
+            return False
+        except Exception as e:
+            print(f"Error en MailerService Resend: {e}")
+            return False
+
+    def _send_via_smtp(self, email_dest, subject, html_content):
+        if not self.smtp_user or not self.smtp_pass:
+            print("MailerService: credenciales SMTP incompletas.")
+            return False
+
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Pegasus: {asunto_corto}"
+        msg["Subject"] = f"Pegasus: {subject}"
         msg["From"] = f"Pegasus System <{self.smtp_user}>"
         msg["To"] = email_dest
-
-        html_content = self._generar_html(asunto_corto, mensaje_cuerpo, otp)
         msg.attach(MIMEText(html_content, "html"))
 
         try:
             with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port) as server:
                 server.login(self.smtp_user, self.smtp_pass)
                 server.send_message(msg)
-            return otp
+            return True
         except Exception as e:
-            print(f"Error en MailerService: {e}")
-            return None
+            print(f"Error en MailerService SMTP: {e}")
+            return False
+
+    def enviar_otp(self, email_dest, asunto_corto, mensaje_cuerpo):
+        """Envía un OTP y devuelve el código generado o None si falla."""
+        otp = str(random.randint(100000, 999999))
+        subject = f"Pegasus: {asunto_corto}"
+        html_content = self._generar_html(asunto_corto, mensaje_cuerpo, otp)
+
+        if self.resend_api_key:
+            enviado = self._send_via_resend(email_dest, subject, html_content)
+        else:
+            enviado = self._send_via_smtp(email_dest, subject, html_content)
+
+        return otp if enviado else None

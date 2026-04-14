@@ -1,0 +1,34 @@
+STDOUT:
+[✅ PASS] Perfil CONCIERGE - Cita médica (CONCIERGE)
+[✅ PASS] Perfil LEAD_GEN - Mentoría (LEAD_GEN)
+[✅ PASS] Test 1 - Vendedor Moneda (RETAIL)
+[✅ PASS] Test RAG - Envíos y Pago Móvil (RETAIL)
+[✅ PASS] Perfil RETAIL - Venta rápida (RETAIL)
+[✅ PASS] Perfil RETAIL - Cierre inmediato (RETAIL)
+[✅ PASS] Perfil SUPPORT - Consulta técnica (SUPPORT)
+[✅ PASS] Test 2 - Soporte Queja Crítica (VENTAS)
+[✅ PASS] Test 3 - Largo Plazo Memoria (VENTAS)
+[✅ PASS] Test 4 - Inventario Vacío (VENTAS)
+[✅ PASS] Test 5 - Filtro Anti-IA (VENTAS)
+[✅ PASS] Test 6 - Influencer Marca Personal (VENTAS)
+[✅ PASS] Test 7 - Servicio Clínica Odontológica (VENTAS)
+[✅ PASS] Test 10 - Fuera de Contexto Seguridad (VENTAS)
+[✅ PASS] Test 11 - Consulta de Información (Ubicación) (VENTAS)
+[✅ PASS] Test 12 - Consulta Específica Influencer (VENTAS)
+[✅ PASS] Test 13 - Pregunta de Ubicación (Con datos) (VENTAS)
+[✅ PASS] Test 14 - Pregunta de Ubicación (Vacio) (VENTAS)
+[✅ PASS] Test 15a - Consulta de Sitio Web (VENTAS)
+[✅ PASS] Test 15 - Usuario comparte Post (VENTAS)
+[✅ PASS] Test 16 - Conversación Larga Influencer (VENTAS)
+[✅ PASS] Test 17 - Servicio Médico Explícito (VENTAS)
+[✅ PASS] Test 18 - Influencer Colaboración Explícita (VENTAS)
+[✅ PASS] Test 19 - Usuario comparte Reel (VENTAS)
+[✅ PASS] Test 20 - Cierre de Venta Completo (VENTAS)
+[✅ PASS] Test 21 - Cierre de Venta con Pago (VENTAS)
+[✅ PASS] Test 22 - Cierre de Venta con Envío (VENTAS)
+
+Resumen:
+Total: 27 | ✅ Pasaron: 27 | ❌ Fallaron: 0
+Reporte guardado en: c:\Users\Luis\Documents\Pegasus_desktop_instachat\test_reports\reporte_20260413_194731.md
+
+STDERR:
