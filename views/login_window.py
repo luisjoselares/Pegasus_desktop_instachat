@@ -13,6 +13,7 @@ from services.mailer_service import MailerService
 from views.register_wizard import RegisterWizard
 # Asegúrate de que este archivo exista en views/
 from views.forgot_password_page import ForgotPasswordPage
+from views.components import PegasusDialogBar
 
 class LoginPage(QWidget):
     def __init__(self, parent):
@@ -183,8 +184,15 @@ class LoginWindow(QDialog):
         super().__init__()
         self.setObjectName("LoginWindow")
         self.setWindowTitle("Pegasus - Gestión de Acceso")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setFixedSize(400, 550)
-        self.setWindowFlag(Qt.WindowType.WindowContextHelpButtonHint, False)
+        self.setStyleSheet(
+            "QDialog#LoginWindow {"
+            "background-color: #121212;"
+            "border: 1px solid #00E5FF;"
+            "border-radius: 14px;"
+            "}"
+        )
 
         # Variables para transferir datos al MainWindow
         self.cliente_autorizado = None
@@ -209,6 +217,10 @@ class LoginWindow(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.title_bar = PegasusDialogBar("Pegasus - Login", self)
+        layout.addWidget(self.title_bar)
         layout.addWidget(self.stack)
 
     def enviar_email(self, email, asunto, texto):

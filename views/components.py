@@ -1,6 +1,6 @@
 import qtawesome as qta
 from PyQt6.QtWidgets import QFrame, QPushButton, QLineEdit, QGraphicsDropShadowEffect, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel
-from PyQt6.QtGui import QCursor, QFontMetrics
+from PyQt6.QtGui import QCursor
 from PyQt6.QtCore import QDate, Qt, pyqtSignal
 
 
@@ -33,14 +33,11 @@ class PegasusPrimaryButton(QPushButton):
 class PegasusTitleBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._mouse_pos = None
-
         self.setObjectName("pegasusTitleBar")
         self.setStyleSheet(
             "QWidget#pegasusTitleBar { background: transparent; }"
             "QPushButton { background: transparent; border: none; color: #00E5FF; }"
             "QPushButton:hover { background-color: rgba(0, 229, 255, 0.08); }"
-            "QPushButton#btn_close:hover { background-color: #FF3333; color: #FFFFFF; }"
         )
 
         layout = QHBoxLayout(self)
@@ -50,7 +47,6 @@ class PegasusTitleBar(QWidget):
         self.lbl_logo = QLabel("Pegasus")
         self.lbl_logo.setStyleSheet("color: #00E5FF; font-weight: bold; font-size: 14px; background: transparent; border: none;")
         layout.addWidget(self.lbl_logo)
-
         layout.addStretch()
 
         self.btn_min = QPushButton(qta.icon('fa5s.minus', color='#00E5FF'), "")
@@ -78,10 +74,49 @@ class PegasusTitleBar(QWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._mouse_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+        if hasattr(self, '_mouse_pos') and self._mouse_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
             self.window().move(event.globalPosition().toPoint() - self._mouse_pos)
             event.accept()
         super().mouseMoveEvent(event)
+
+
+class PegasusDialogBar(QWidget):
+    def __init__(self, title: str = "Configuración de Instagram", parent=None):
+        super().__init__(parent)
+        self.setObjectName("dialogTitleBar")
+        self._drag_position = None
+
+        self.setStyleSheet(
+            "QWidget#dialogTitleBar { background: transparent; }"
+            "QPushButton { background: transparent; border: none; color: #FFFFFF; }"
+            "QPushButton:hover { color: #FF4C4C; }"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(0)
+
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet("color: #FFFFFF; font-size: 14px;")
+        layout.addWidget(self.title_label)
+        layout.addStretch()
+
+        self.close_button = QPushButton(qta.icon("fa5s.times", color="#FFFFFF"), "")
+        self.close_button.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.close_button.clicked.connect(lambda: self.window().close())
+        layout.addWidget(self.close_button)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_position = event.globalPosition().toPoint() - self.window().frameGeometry().topLeft()
+            event.accept()
+        return super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_position is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.window().move(event.globalPosition().toPoint() - self._drag_position)
+            event.accept()
+        return super().mouseMoveEvent(event)
 
 
 class PegasusInput(QLineEdit):
@@ -132,7 +167,7 @@ class PegasusCalendar(QWidget):
         self.lbl_month_year.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_month_year.setStyleSheet("color: white; font-weight: bold;")
 
-        self.btn_next = QPushButton("▶")
+        self.btn_next = QPushButton("➡")
         self.btn_next.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_next.setStyleSheet(
             "QPushButton { background: transparent; color: #00E5FF; font-size: 16px; font-weight: bold; border: none; }"
@@ -244,6 +279,57 @@ class PegasusCalendar(QWidget):
         self._populate_calendar(self.displayed_date)
 
 
+class PegasusChatItem(QFrame):
+    def __init__(self, username: str = "Cliente", last_message: str = "", unread: bool = False, parent=None):
+        super().__init__(parent)
+        self.setObjectName("pegasusChatItem")
+        self.setStyleSheet(
+            "QFrame#pegasusChatItem { background-color: #121212; border: 1px solid #222; border-radius: 14px; }"
+            "QLabel { color: #FFFFFF; }"
+            "QLabel.unread { color: #00E5FF; font-weight: bold; }"
+            "QPushButton { background: transparent; border: none; color: #00E5FF; }"
+            "QPushButton:hover { color: #7ef2ff; }"
+        )
+
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(6)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        self.lbl_username = QLabel(username)
+        self.lbl_username.setStyleSheet("font-weight: 700; color: #FFFFFF;")
+        header_layout.addWidget(self.lbl_username)
+
+        if unread:
+            unread_label = QLabel("Nuevo")
+            unread_label.setObjectName("unread")
+            unread_label.setStyleSheet("color: #00E5FF; font-size: 11px; font-weight: 700;")
+            header_layout.addWidget(unread_label)
+
+        header_layout.addStretch()
+        text_layout.addLayout(header_layout)
+
+        self.lbl_last_message = QLabel(last_message or "Sin mensajes recientes")
+        self.lbl_last_message.setStyleSheet("color: #AAAAAA; font-size: 12px;")
+        self.lbl_last_message.setWordWrap(True)
+        text_layout.addWidget(self.lbl_last_message)
+
+        main_layout.addLayout(text_layout)
+
+        self.btn_open_chat = QPushButton(qta.icon('fa5s.comment-dots', color='#00E5FF'), "")
+        self.btn_open_chat.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_open_chat.setToolTip("Abrir chat")
+        self.btn_open_chat.setFixedSize(28, 28)
+        main_layout.addWidget(self.btn_open_chat)
+
+
 class PegasusNotificationCard(QFrame):
     def __init__(self, title: str, message: str, timestamp: str, critical: bool = False, parent=None):
         super().__init__(parent)
@@ -283,54 +369,3 @@ class PegasusNotificationCard(QFrame):
         main_layout.addWidget(icon_label)
         main_layout.addWidget(text_container, stretch=1)
         main_layout.addWidget(timestamp_label)
-
-
-class PegasusChatItem(QWidget):
-    def __init__(self, username: str, last_message: str, unread: bool = False, parent=None):
-        super().__init__(parent)
-        self.setObjectName("pegasusChatItem")
-        self.setStyleSheet(
-            "QWidget#pegasusChatItem { background: transparent; }"
-            "QWidget#pegasusChatItem:hover { background-color: rgba(255, 255, 255, 0.04); }"
-        )
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(10)
-
-        text_container = QWidget()
-        text_container.setStyleSheet("background: transparent;")
-        text_layout = QVBoxLayout(text_container)
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
-
-        self.lbl_username = QLabel(username)
-        self.lbl_username.setStyleSheet("color: #FFFFFF; font-weight: bold; background: transparent; border: none;")
-
-        metrics = QFontMetrics(self.lbl_username.font())
-        snippet = metrics.elidedText(last_message or '', Qt.TextElideMode.ElideRight, 260)
-        self.lbl_snippet = QLabel(snippet)
-        self.lbl_snippet.setStyleSheet("color: #888888; font-size: 12px; background: transparent; border: none;")
-        self.lbl_snippet.setWordWrap(False)
-
-        text_layout.addWidget(self.lbl_username)
-        text_layout.addWidget(self.lbl_snippet)
-
-        self.unread_dot = QLabel("●")
-        self.unread_dot.setStyleSheet("color: #00E5FF; font-size: 12px; background: transparent; border: none;")
-        self.unread_dot.setVisible(bool(unread))
-        self.unread_dot.setFixedSize(12, 12)
-        self.unread_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.btn_open_chat = QPushButton(qta.icon('fa5s.external-link-alt', color='#00E5FF'), "")
-        self.btn_open_chat.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.btn_open_chat.setStyleSheet(
-            "QPushButton { background: transparent; border: none; color: #00E5FF; }"
-            "QPushButton:hover { background-color: rgba(0, 229, 255, 0.08); border-radius: 6px; }"
-        )
-        self.btn_open_chat.setFixedSize(28, 28)
-        self.btn_open_chat.setToolTip("Abrir Chat")
-
-        layout.addWidget(text_container, stretch=1)
-        layout.addWidget(self.unread_dot)
-        layout.addWidget(self.btn_open_chat)
