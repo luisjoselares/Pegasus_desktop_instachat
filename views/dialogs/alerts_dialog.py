@@ -2,15 +2,17 @@ from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
     QLabel,
-    QTableWidget,
-    QTableWidgetItem,
+    QScrollArea,
+    QWidget,
+    QFrame,
     QPushButton,
     QHBoxLayout,
-    QHeaderView,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QBrush, QColor
 from services.database_service import LocalDBService
+
+from views.components import PegasusNotificationCard
 
 
 class AlertsDialog(QDialog):
@@ -28,7 +30,10 @@ class AlertsDialog(QDialog):
         title = QLabel(
             f"Alertas de seguridad para la cuenta: {account_name}" if account_name else "Alertas de seguridad"
         )
-        title.setStyleSheet("font-size: 18px; color: #00E5FF; font-weight: bold;")
+        title.setStyleSheet(
+            "font-size: 20px; color: #FFFFFF; font-weight: 900; letter-spacing: 0.5px;"
+            "background: transparent; border: none;"
+        )
         layout.addWidget(title)
 
         self.summary_label = QLabel("")
@@ -37,21 +42,20 @@ class AlertsDialog(QDialog):
         self.summary_label.setVisible(False)
         layout.addWidget(self.summary_label)
 
-        self.table = QTableWidget(0, 7, self)
-        self.table.setHorizontalHeaderLabels([
-            "Fecha",
-            "Hilo",
-            "Usuario",
-            "Tipo",
-            "Estado",
-            "Destinatario",
-            "Detalles",
-        ])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.table)
+        self.alerts_area = QScrollArea(self)
+        self.alerts_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.alerts_area.setStyleSheet("background: transparent;")
+        self.alerts_area.setWidgetResizable(True)
+
+        self.alerts_container = QWidget()
+        self.alerts_layout = QVBoxLayout(self.alerts_container)
+        self.alerts_layout.setContentsMargins(0, 0, 0, 0)
+        self.alerts_layout.setSpacing(12)
+        self.alerts_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.alerts_layout.addStretch()
+
+        self.alerts_area.setWidget(self.alerts_container)
+        layout.addWidget(self.alerts_area)
 
         footer = QHBoxLayout()
         footer.addStretch()
@@ -65,34 +69,38 @@ class AlertsDialog(QDialog):
 
         self.load_alerts()
 
+    def _clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            elif item.layout():
+                self._clear_layout(item.layout())
+
     def load_alerts(self):
-        self.table.setRowCount(0)
+        self._clear_layout(self.alerts_layout)
+        self.alerts_layout.addStretch()
+
         alerts = self.db.get_recent_alerts(account_id=self.account_id, limit=100)
         if not alerts and self.account_id is None:
             alerts = self.db.get_recent_alerts(limit=100)
 
-        for alert in alerts:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(alert.get('created_at', ''))))
-            self.table.setItem(row, 1, QTableWidgetItem(str(alert.get('thread_id', ''))))
-            self.table.setItem(row, 2, QTableWidgetItem(str(alert.get('username', ''))))
-            self.table.setItem(row, 3, QTableWidgetItem(str(alert.get('alert_type', ''))))
-            status_item = QTableWidgetItem(str(alert.get('status', '')))
-            status_text = status_item.text().upper()
-            if status_text == 'SENT':
-                status_item.setForeground(QBrush(QColor('#7CFC00')))
-            elif status_text == 'FAILED':
-                status_item.setForeground(QBrush(QColor('#FF6666')))
-            elif status_text == 'PENDING':
-                status_item.setForeground(QBrush(QColor('#FFDD55')))
-            else:
-                status_item.setForeground(QBrush(QColor('#FFFFFF')))
-            self.table.setItem(row, 4, status_item)
-            self.table.setItem(row, 5, QTableWidgetItem(str(alert.get('recipient', ''))))
-            self.table.setItem(row, 6, QTableWidgetItem(str(alert.get('details', ''))))
-
         if alerts:
+            for alert in alerts:
+                title = f"{alert.get('alert_type', 'Alerta')} · {alert.get('username', 'Usuario')}"
+                message = str(alert.get('details', 'Sin detalles'))
+                timestamp = str(alert.get('created_at', ''))
+                critical = alert.get('status', '').upper() in ('FAILED', 'CRITICAL')
+
+                card = PegasusNotificationCard(
+                    title=title,
+                    message=message,
+                    timestamp=timestamp,
+                    critical=critical,
+                )
+                self.alerts_layout.insertWidget(self.alerts_layout.count() - 1, card)
+
             summary = f"Total: {len(alerts)} alerta(s) mostradas."
             if self.account_id is None:
                 stats = self.db.get_alert_stats(cliente_id=None)
@@ -106,9 +114,6 @@ class AlertsDialog(QDialog):
             self.summary_label.setVisible(True)
         else:
             self.summary_label.setVisible(False)
-
-        if not alerts:
-            self.table.setRowCount(1)
-            self.table.setItem(0, 0, QTableWidgetItem("No hay alertas registradas."))
-            for col in range(1, self.table.columnCount()):
-                self.table.setItem(0, col, QTableWidgetItem("-"))
+            empty_label = QLabel("No hay alertas registradas.")
+            empty_label.setStyleSheet("color: #BBBBBB; font-size: 14px;")
+            self.alerts_layout.insertWidget(self.alerts_layout.count() - 1, empty_label)

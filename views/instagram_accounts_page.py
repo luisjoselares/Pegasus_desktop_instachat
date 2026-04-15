@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QFrame,
                              QLabel, QScrollArea, QHBoxLayout, QMessageBox, QInputDialog, QLineEdit)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer, QTime
 from services.database_service import LocalDBService
+from views.components import PegasusChatItem
 # Importamos los diálogos desde la nueva subcarpeta
 from views.dialogs.instagram_dialog import AddAccountDialog
 from views.dialogs.conversation_dialog import ConversationDialog
@@ -44,6 +45,9 @@ class AccountCard(QFrame):
             "border: 1px solid #1E2A35;"
             "border-radius: 18px;"
             "padding: 1px;"
+            "}"
+            "QFrame#ModernAccountCard QLabel {"
+            "background: transparent;"
             "}"
             "QFrame#ModernAccountCard:hover {"
             "border-color: #00E5FF;"
@@ -163,7 +167,7 @@ class AccountCard(QFrame):
         self.btn_edit.clicked.connect(self._on_edit_clicked)
         header_layout.addWidget(self.btn_edit)
 
-        self.btn_alerts = QPushButton(qta.icon('fa5s.exclamation-triangle', color='#FFCC00'), "")
+        self.btn_alerts = QPushButton(qta.icon('fa5s.history', color='#FFCC00'), "")
         self.btn_alerts.setObjectName("AlertsBtn")
         self.btn_alerts.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_alerts.setFixedSize(QSize(32, 32))
@@ -186,6 +190,21 @@ class AccountCard(QFrame):
         self.lbl_log = QLabel(data.get('last_log', 'Sistema listo.'))
         self.lbl_log.setStyleSheet("color: #00FFCC; font-size: 11px; margin-left: 6px;")
         self.main_layout.addWidget(self.lbl_log)
+
+        self.lbl_recent_activity = QLabel("Actividad reciente (24h)")
+        self.lbl_recent_activity.setStyleSheet("color: #888888; font-size: 12px; font-weight: 600; border: none; background: transparent; margin-top: 12px;")
+        self.main_layout.addWidget(self.lbl_recent_activity)
+
+        self.recent_chats_container = QWidget()
+        self.recent_chats_container.setStyleSheet("background: transparent; border: none;")
+        self.recent_chats_layout = QVBoxLayout(self.recent_chats_container)
+        self.recent_chats_layout.setContentsMargins(0, 0, 0, 0)
+        self.recent_chats_layout.setSpacing(8)
+        self.recent_chats_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.recent_chats_layout.addStretch()
+        self.main_layout.addWidget(self.recent_chats_container)
+
+        self._populate_recent_chats()
 
         self.details_frame = QFrame()
         self.details_frame.setVisible(False)
@@ -318,6 +337,36 @@ class AccountCard(QFrame):
     def _on_edit_clicked(self):
         self.request_edit_account.emit(self.account_id)
 
+    def _populate_recent_chats(self):
+        # Limpia contenido previo
+        while self.recent_chats_layout.count():
+            item = self.recent_chats_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        chats = []
+        try:
+            chats = self.db.get_recent_chats_by_account(self.account_id, hours=24)
+        except Exception:
+            chats = []
+
+        if chats:
+            for chat in chats:
+                chat_item = PegasusChatItem(
+                    username=chat.get('username', 'Cliente'),
+                    last_message=chat.get('ultimo_mensaje', ''),
+                    unread=bool(chat.get('unread_count', 0))
+                )
+                chat_item.btn_open_chat.clicked.connect(lambda _, c_id=self.account_id: self.open_chat_dialog(c_id))
+                self.recent_chats_layout.addWidget(chat_item)
+        else:
+            empty_label = QLabel("No hay actividad reciente en las últimas 24 horas.")
+            empty_label.setStyleSheet("color: #777777; font-size: 12px; border: none; background: transparent;")
+            self.recent_chats_layout.addWidget(empty_label)
+
+        self.recent_chats_layout.addStretch()
+
     def _build_stat_card(self, icon_name, color, title, value):
         card = QFrame()
         card.setStyleSheet(
@@ -432,6 +481,12 @@ class AccountCard(QFrame):
         if hasattr(self.controller, 'get_conversation_history'):
             history = self.controller.get_conversation_history(conversation.get('thread_id'))
         dialog = ConversationDialog(self, title=conversation.get('title', 'Conversación'), history=history)
+        dialog.exec()
+
+    def open_chat_dialog(self, cliente_id):
+        if not cliente_id:
+            return
+        dialog = ConversationDialog(cliente_id=cliente_id, parent=self)
         dialog.exec()
 
     def toggle_manual_control(self, thread_id, toggle_btn, status_label):

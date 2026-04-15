@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QCalendarWidget,
     QScrollArea,
     QFrame,
     QSizePolicy,
@@ -13,7 +12,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QDate
 from services.database_service import LocalDBService
 
-from views.components import PegasusCard, PegasusPrimaryButton
+from views.components import PegasusCard, PegasusPrimaryButton, PegasusCalendar
+from views.dialogs.conversation_dialog import ConversationDialog
 
 
 class AgendaPage(QWidget):
@@ -38,15 +38,12 @@ class AgendaPage(QWidget):
         header_layout.addWidget(title)
         header_layout.addStretch()
 
-        self.calendar = QCalendarWidget()
-        self.calendar.setObjectName("agendaCalendar")
-        self.calendar.setSelectedDate(QDate.currentDate())
-        self.calendar.setGridVisible(True)
-        self.calendar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.calendar.setStyleSheet("background: transparent; border: none;")
+        self.calendario = PegasusCalendar()
+        self.calendario.setObjectName("agendaCalendar")
+        self.calendario.dateChanged.connect(self.on_date_selected)
 
         main_layout.addLayout(header_layout)
-        main_layout.addWidget(self.calendar, stretch=1)
+        main_layout.addWidget(self.calendario)
 
         content_card = PegasusCard()
         content_card.setObjectName("agendaContentCard")
@@ -70,7 +67,7 @@ class AgendaPage(QWidget):
         self.appointments_area.setWidget(self.appointments_container)
         content_layout.addWidget(self.appointments_area)
 
-        main_layout.addWidget(content_card)
+        main_layout.addWidget(content_card, stretch=2)
 
         action_layout = QHBoxLayout()
         action_layout.addStretch()
@@ -82,6 +79,10 @@ class AgendaPage(QWidget):
         action_layout.addWidget(self.btn_new_cita, alignment=Qt.AlignmentFlag.AlignRight)
 
         main_layout.addLayout(action_layout)
+
+    def on_date_selected(self, selected_date: QDate):
+        self.selected_date = selected_date
+        self.load_citas()
 
     def _clear_layout(self, layout):
         while layout.count():
@@ -134,6 +135,16 @@ class AgendaPage(QWidget):
             buttons_layout = QHBoxLayout()
             buttons_layout.setSpacing(10)
             buttons_layout.addWidget(status_badge)
+
+            btn_ver_chat = PegasusPrimaryButton("💬 Ver Chat")
+            btn_ver_chat.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_ver_chat.setStyleSheet(
+                "QPushButton { background-color: transparent; color: #00E5FF; border: 1px solid #00E5FF; border-radius: 8px; padding: 8px 14px; }"
+                "QPushButton:hover { background-color: rgba(0, 229, 255, 0.1); }"
+            )
+            btn_ver_chat.clicked.connect(lambda _, c_id=cita.get('cliente_id'): self.open_chat_dialog(c_id))
+            buttons_layout.addWidget(btn_ver_chat)
+
             buttons_layout.addStretch()
 
             btn_confirm = QPushButton("Confirmar")
@@ -161,6 +172,12 @@ class AgendaPage(QWidget):
             self.appointments_layout.addWidget(card)
 
         self.appointments_layout.addStretch()
+
+    def open_chat_dialog(self, cliente_id):
+        if not cliente_id:
+            return
+        dialog = ConversationDialog(cliente_id=cliente_id, parent=self)
+        dialog.exec()
 
     def _update_cita_status(self, cita_id, estado):
         self.db.update_cita_status(cita_id, estado)

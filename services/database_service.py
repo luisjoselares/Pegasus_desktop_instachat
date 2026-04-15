@@ -479,6 +479,46 @@ class LocalDBService:
                 for row in cursor.fetchall()
             ]
 
+    def get_recent_chats_by_account(self, account_id, hours=24):
+        """Retorna los chats recientes de una cuenta en las últimas horas agrupados por usuario."""
+        if not account_id:
+            return []
+
+        since = datetime.now() - timedelta(hours=hours)
+        since_str = since.strftime("%Y-%m-%d %H:%M:%S")
+
+        with self.get_connection() as conn:
+            query = (
+                "WITH latest_user AS ("
+                "  SELECT username, MAX(fecha) AS last_ts "
+                "  FROM chat_history "
+                "  WHERE cliente_id = ? AND fecha > ? "
+                "  GROUP BY username"
+                "), "
+                "unread_counts AS ("
+                "  SELECT username, COUNT(*) AS unread_count "
+                "  FROM chat_history "
+                "  WHERE cliente_id = ? AND fecha > ? AND (respuesta_ia IS NULL OR TRIM(respuesta_ia) = '') "
+                "  GROUP BY username"
+                ") "
+                "SELECT lu.username, ch.mensaje_usuario AS ultimo_mensaje, lu.last_ts AS timestamp, "
+                "COALESCE(uc.unread_count, 0) AS unread_count "
+                "FROM latest_user lu "
+                "JOIN chat_history ch ON ch.username = lu.username AND ch.fecha = lu.last_ts AND ch.cliente_id = ? "
+                "LEFT JOIN unread_counts uc ON uc.username = lu.username "
+                "ORDER BY lu.last_ts DESC"
+            )
+            cursor = conn.execute(query, (account_id, since_str, account_id, since_str, account_id))
+            return [
+                {
+                    "username": row["username"],
+                    "ultimo_mensaje": row["ultimo_mensaje"],
+                    "timestamp": row["timestamp"],
+                    "unread_count": row["unread_count"],
+                }
+                for row in cursor.fetchall()
+            ]
+
     def obtener_conversacion_completa(self, thread_id, cliente_id=None):
         """Retorna todo el historial de una conversación por thread_id."""
         with self.get_connection() as conn:

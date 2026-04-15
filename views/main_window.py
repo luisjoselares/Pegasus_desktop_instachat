@@ -3,8 +3,10 @@ from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
                              QPushButton, QStackedWidget, QLabel, QFrame,
                              QDialog, QLineEdit, QDialogButtonBox, QMessageBox,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog,
+                             QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QColor
 import qtawesome as qta # Asegúrate de tenerlo instalado: pip install qtawesome
 
 from views.instagram_accounts_page import InstagramAccountsPage
@@ -12,6 +14,7 @@ from views.home_page import HomePage
 from views.sales_page import SalesPage
 from views.agenda_page import AgendaPage
 from views.log_dialog import LogDialog
+from views.components import PegasusTitleBar
 from controllers.instagram_controller import InstagramController
 from controllers.main_controller import MainController
 from services.database_service import LocalDBService
@@ -31,6 +34,7 @@ class MainWindow(QMainWindow):
         self.admin_session_duration = timedelta(minutes=5)
         
         self.setWindowTitle("Pegasus Desktop - Instagram Chat")
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1100, 700)
         
         # 1. Inicializar Servicios
@@ -42,10 +46,27 @@ class MainWindow(QMainWindow):
         if hasattr(self.shared_engine, 'set_cliente_id'):
             self.shared_engine.set_cliente_id(self.current_cliente_id)
 
-        # 2. Configurar Layout Base (Horizontal)
+        # 2. Configurar Layout Base
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
-        self.layout_principal = QHBoxLayout(self.main_widget)
+        self.main_layout = QVBoxLayout(self.main_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        shadow = QGraphicsDropShadowEffect(self.main_widget)
+        shadow.setBlurRadius(30)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        shadow.setOffset(0, 0)
+        self.main_widget.setGraphicsEffect(shadow)
+
+        self.title_bar = PegasusTitleBar(self)
+        self.title_bar.btn_min.clicked.connect(self.showMinimized)
+        self.title_bar.btn_max.clicked.connect(self.toggle_maximize)
+        self.title_bar.btn_close.clicked.connect(self.close)
+        self.main_layout.addWidget(self.title_bar)
+
+        self.content_widget = QWidget()
+        self.layout_principal = QHBoxLayout(self.content_widget)
         self.layout_principal.setContentsMargins(0, 0, 0, 0)
         self.layout_principal.setSpacing(0)
 
@@ -100,10 +121,16 @@ class MainWindow(QMainWindow):
 
         # 6. CUARTO: Añadir el stack al layout principal (a la derecha del sidebar)
         self.layout_principal.addWidget(self.pages_container)
+        self.main_layout.addWidget(self.content_widget)
 
         # Si existe una cuenta con bot habilitado, intenta iniciar automáticamente.
         self.main_controller.auto_start_if_enabled()
 
+    def toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
 
     def view_order_details(self, order_id):
         order = None

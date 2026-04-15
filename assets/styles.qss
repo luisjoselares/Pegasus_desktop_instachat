@@ -1,3 +1,30 @@
+/* =========================================
+   TEXTOS FLOTANTES (Adiós recuadros grises)
+   ========================================= */
+QLabel, QCheckBox, QRadioButton {
+    background-color: transparent;
+    border: none;
+    color: white;
+}
+
+/* Mantener fondo solo si es una tarjeta o badge explícito */
+QLabel#statusBadge {
+    background-color: #333333;
+    border-radius: 4px;
+}
+
+/* Eliminar el outline de enfoque (puntos grises) en todos los widgets */
+* {
+    outline: none;
+}
+
+/* Limpieza total de fondos en labels y contenedores genéricos */
+QLabel, QCheckBox, QGroupBox, QScrollArea {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+}
+
 /* ========================================================================
    1. CONFIGURACIÓN GLOBAL (DEEP DARK)
    ======================================================================== */
@@ -67,6 +94,22 @@ QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#Instagram
     background-color: #141414;
 }
 
+QPushButton#titleBarButton {
+    background: transparent;
+    border: none;
+    color: #888;
+    padding: 5px;
+    font-size: 14px;
+}
+QPushButton#titleBarButton:hover {
+    background-color: #222;
+    color: #00E5FF;
+}
+QPushButton#closeButton:hover {
+    background-color: #e81123;
+    color: white;
+}
+
 /* Estado Activo: Borde cian a la izquierda para indicar posición */
 #Sidebar QPushButton:checked, #Sidebar QPushButton[active="true"] {
     color: #FFFFFF;
@@ -77,20 +120,28 @@ QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#Instagram
 /* ========================================================================
    3. COMPONENTES DE FORMULARIO (MODERNOS)
    ======================================================================== */
-QLineEdit, QTextEdit {
-    background-color: #161616;
+QLineEdit, QTextEdit, QComboBox {
+    background-color: rgba(255, 255, 255, 0.05);
     border: none;
     border-bottom: 2px solid #3d3d3d;
-    border-radius: 0;
-    padding: 10px 0;
-    color: #FFFFFF;
+    color: white;
+    padding: 8px;
+    selection-background-color: #00E5FF;
 }
 
-QLineEdit:focus, QTextEdit:focus {
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
     border-bottom: 2px solid #00E5FF;
+    background-color: rgba(0, 229, 255, 0.05);
 }
 
-QTimeEdit, QComboBox {
+QComboBox QAbstractItemView {
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    selection-background-color: #00E5FF;
+    outline: none;
+}
+
+QTimeEdit {
     background-color: #161616;
     border: 1px solid #2A2A2A;
     border-radius: 4px;
@@ -98,7 +149,7 @@ QTimeEdit, QComboBox {
     color: #FFFFFF;
 }
 
-QTimeEdit:focus, QComboBox:focus {
+QTimeEdit:focus {
     border: 1px solid #00E5FF;
 }
 
@@ -111,45 +162,80 @@ QComboBox::down-arrow {
     margin-right: 10px;
 }
 
-QCalendarWidget {
-    background-color: #0f0f0f;
-    color: #FFFFFF;
-}
-
+/* =========================================
+   CALENDARIO MODERNO (Pegasus Theme)
+   ========================================= */
+/* Fondo de la estructura base */
 QCalendarWidget QWidget {
+    background-color: #121212;
+}
+
+/* Barra superior (Navegación) */
+#qt_calendar_navigationbar {
     background-color: #0f0f0f;
-    color: #FFFFFF;
+    border-bottom: 1px solid #2a2a2a;
 }
 
-QCalendarWidget QTableView {
-    selection-background-color: #00E5FF;
-    selection-color: black;
-    background-color: transparent;
-    color: #FFFFFF;
+/* Textos de Mes y Año */
+#qt_calendar_monthbutton, #qt_calendar_yearbutton {
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    background: transparent;
+}
+#qt_calendar_monthbutton:hover, #qt_calendar_yearbutton:hover {
+    background-color: #222222;
+    border-radius: 4px;
 }
 
-QCalendarWidget QToolButton {
-    background-color: transparent;
-    border: none;
-    border-radius: 8px;
+/* Botones de cambiar de mes (< y >) */
+#qt_calendar_prevmonth, #qt_calendar_nextmonth {
+    background: transparent;
     color: #00E5FF;
 }
+#qt_calendar_prevmonth:hover, #qt_calendar_nextmonth:hover {
+    background-color: #222222;
+    border-radius: 4px;
+}
 
+/* Nombres de los días de la semana (L, M, M, J...) */
+QCalendarWidget QToolButton {
+    background-color: transparent;
+    color: #888888;
+}
+
+/* Cuadrícula de fechas */
 QCalendarWidget QAbstractItemView:enabled {
-    color: #FFFFFF;
+    background-color: #121212;
+    color: white;
     selection-background-color: #00E5FF;
     selection-color: black;
-    background-color: transparent;
-}
-
-QCalendarWidget#agendaCalendar {
-    background-color: transparent;
     border: none;
-    border-radius: 16px;
 }
 
-QCalendarWidget#agendaCalendar QWidget {
-    background-color: transparent;
+/* Días inactivos (de otros meses) */
+QCalendarWidget QAbstractItemView:disabled {
+    color: #3d3d3d;
+}
+
+/* Menú desplegable al hacer clic en el mes */
+QCalendarWidget QMenu {
+    background-color: #1a1a1a;
+    color: white;
+    border: 1px solid #333;
+}
+QCalendarWidget QMenu::item:selected {
+    background-color: #00E5FF;
+    color: black;
+}
+
+/* Selector numérico al hacer clic en el año */
+QCalendarWidget QSpinBox {
+    background-color: #1a1a1a;
+    color: white;
+    border: 1px solid #333;
+    selection-background-color: #00E5FF;
+    selection-color: black;
 }
 
 #agendaContentCard {

@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame, QPushButton, QTableWidget, QTableWidgetItem,
                              QHeaderView, QSplitter)
 from PyQt6.QtCore import Qt, QSize
+from views.dialogs.conversation_dialog import ConversationDialog
 
 class SalesPage(QWidget):
     def __init__(self, db_service, parent=None):
@@ -54,9 +55,9 @@ class SalesPage(QWidget):
         lbl_table.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 14px; margin-bottom: 10px; border: none;")
         left_layout.addWidget(lbl_table)
 
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget(0, 5)
         self.table.setObjectName("pegasusTable")
-        self.table.setHorizontalHeaderLabels(["ID", "Cliente", "Monto", "Estado"])
+        self.table.setHorizontalHeaderLabels(["ID", "Cliente", "Monto", "Estado", "Acciones"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -88,12 +89,23 @@ class SalesPage(QWidget):
         dc_layout.addWidget(self.lbl_banco)
         
         btn_row = QHBoxLayout()
+        btn_chat = QPushButton("💬 Ver Chat del Cliente")
+        btn_chat.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_chat.setStyleSheet(
+            "QPushButton { background-color: transparent; color: #00E5FF; border: 1px solid #00E5FF; border-radius: 8px; padding: 10px; }"
+            "QPushButton:hover { background-color: rgba(0, 229, 255, 0.1); }"
+        )
+        btn_chat.setEnabled(False)
+        self.btn_chat = btn_chat
+        btn_row.addWidget(btn_chat)
+
         btn_approve = QPushButton("Aprobar Pago")
         btn_approve.setObjectName("primaryButton")
         btn_reject = QPushButton("Rechazar")
         btn_reject.setObjectName("dangerButton")
         btn_row.addWidget(btn_reject)
         btn_row.addWidget(btn_approve)
+        self.btn_chat.setEnabled(False)
         
         dc_layout.addLayout(btn_row)
         dc_layout.addStretch()
@@ -137,9 +149,29 @@ class SalesPage(QWidget):
             self.detail_content.show()
             self.lbl_ref.setText(f"Referencia: #109283{selected[0].row()}")
             self.lbl_banco.setText("Banco: Pago Móvil / Binance")
+
+            cliente_id_item = self.table.item(selected[0].row(), 1)
+            cliente_id = cliente_id_item.text() if cliente_id_item else None
+            self.selected_cliente_id = cliente_id
+            if hasattr(self, 'btn_chat'):
+                try:
+                    self.btn_chat.clicked.disconnect()
+                except Exception:
+                    pass
+                self.btn_chat.setEnabled(bool(cliente_id))
+                self.btn_chat.clicked.connect(lambda _, c_id=cliente_id: self.open_chat_dialog(c_id))
         else:
             self.lbl_detail_title.show()
             self.detail_content.hide()
+            self.selected_cliente_id = None
+            if hasattr(self, 'btn_chat'):
+                self.btn_chat.setEnabled(False)
+
+    def open_chat_dialog(self, cliente_id):
+        if not cliente_id:
+            return
+        dialog = ConversationDialog(cliente_id=cliente_id, parent=self)
+        dialog.exec()
 
     def refresh_pending_orders(self):
         orders = []
@@ -165,3 +197,12 @@ class SalesPage(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(str(order.get('cliente_id', 'N/A'))))
             self.table.setItem(row, 2, QTableWidgetItem(str(order.get('monto', '0'))))
             self.table.setItem(row, 3, QTableWidgetItem(str(order.get('status', 'PENDIENTE'))))
+            btn_action = QPushButton("💬 Ver Chat")
+            btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_action.setStyleSheet(
+                "QPushButton { background-color: transparent; color: #00E5FF; border: 1px solid #00E5FF; border-radius: 8px; padding: 6px 10px; }"
+                "QPushButton:hover { background-color: rgba(0, 229, 255, 0.1); }"
+            )
+            cliente_id = order.get('cliente_id')
+            btn_action.clicked.connect(lambda _, c_id=cliente_id: self.open_chat_dialog(c_id))
+            self.table.setCellWidget(row, 4, btn_action)
