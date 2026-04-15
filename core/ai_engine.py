@@ -1102,7 +1102,7 @@ class AIService:
             message += payment_phrase
         return message
 
-    def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None, current_state=None, bot_mission=None, chat_history=None):
+    def get_response(self, user_input, config=None, inventory=None, inventory_rows=None, inventory_path=None, time_context=None, custom_training=None, current_state=None, bot_mission=None, chat_history=None, tools=None):
         config = config or {}
         current_state = current_state or config.get('current_state', 'CONSULTA')
         bot_mission = bot_mission or config.get('bot_mission', 'Ventas')
@@ -1238,7 +1238,10 @@ class AIService:
             bot_mission=bot_mission,
             chat_history=chat_history,
             config=config,
+            tools=tools,
         )
+        if isinstance(response, dict) and 'tool_calls' in response:
+            return response, False
         response = self._ensure_data_block(response, user_input, config=config, bot_mission=bot_mission)
         if self._is_reencounter_greeting(user_input):
             normalized_response = normalize_response(response or "")
@@ -1662,7 +1665,7 @@ class AIService:
         estimated = max(1, len(text) // 4)
         return estimated
 
-    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, currency_symbol=None, currency_code=None, currency_name=None, payment_methods=None, payment_method_details=None, info_eventos=None, envios=None, bot_mission=None, chat_history=None, config=None):
+    def generate_response(self, user_input, system_prompt=None, bot_role=None, business_profile=None, inventory=None, inventory_path=None, bot_name=None, whatsapp_contacto=None, time_context=None, custom_training=None, location=None, website=None, currency_symbol=None, currency_code=None, currency_name=None, payment_methods=None, payment_method_details=None, info_eventos=None, envios=None, bot_mission=None, chat_history=None, config=None, tools=None):
         if not self.client:
             self._refresh_client()
 
@@ -1725,11 +1728,22 @@ class AIService:
 
         for attempt in range(3):
             try:
-                completion = self.client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=messages
-                )
-                respuesta = completion.choices[0].message.content
+                create_args = {
+                    "model": "llama-3.1-8b-instant",
+                    "messages": messages
+                }
+                if tools is not None:
+                    create_args["tools"] = tools
+
+                completion = self.client.chat.completions.create(**create_args)
+                message = completion.choices[0].message
+                tool_calls = getattr(message, "tool_calls", None)
+                if tool_calls:
+                    return {
+                        "tool_calls": tool_calls,
+                        "message": message,
+                    }
+                respuesta = message.content
                 respuesta = self._sanitize_ai_response(
                     respuesta,
                     bot_name=bot_name,

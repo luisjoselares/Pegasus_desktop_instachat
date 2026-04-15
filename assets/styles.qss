@@ -7,6 +7,18 @@ QMainWindow, QDialog, QWidget {
     font-family: 'Segoe UI', 'Roboto', sans-serif;
 }
 
+QFrame {
+    border: none;
+    background-color: transparent;
+    background: transparent;
+}
+
+QLabel {
+    border: none;
+    background-color: transparent;
+    background: transparent;
+}
+
 QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#InstagramAccountsPage, #ModernDialog {
     background-color: #080808; /* Fondo base ultra oscuro para contenedores especiales */
     color: #E0E0E0;
@@ -65,7 +77,20 @@ QMainWindow, QDialog, QWidget#LoginPage, QWidget#AccountsPage, QWidget#Instagram
 /* ========================================================================
    3. COMPONENTES DE FORMULARIO (MODERNOS)
    ======================================================================== */
-QLineEdit, QTextEdit, QTimeEdit, QComboBox {
+QLineEdit, QTextEdit {
+    background-color: #161616;
+    border: none;
+    border-bottom: 2px solid #3d3d3d;
+    border-radius: 0;
+    padding: 10px 0;
+    color: #FFFFFF;
+}
+
+QLineEdit:focus, QTextEdit:focus {
+    border-bottom: 2px solid #00E5FF;
+}
+
+QTimeEdit, QComboBox {
     background-color: #161616;
     border: 1px solid #2A2A2A;
     border-radius: 4px;
@@ -73,7 +98,7 @@ QLineEdit, QTextEdit, QTimeEdit, QComboBox {
     color: #FFFFFF;
 }
 
-QLineEdit:focus, QTextEdit:focus, QTimeEdit:focus, QComboBox:focus {
+QTimeEdit:focus, QComboBox:focus {
     border: 1px solid #00E5FF;
 }
 
@@ -84,6 +109,52 @@ QComboBox::down-arrow {
     border-left: 5px solid transparent;
     border-right: 5px solid transparent;
     margin-right: 10px;
+}
+
+QCalendarWidget {
+    background-color: #0f0f0f;
+    color: #FFFFFF;
+}
+
+QCalendarWidget QWidget {
+    background-color: #0f0f0f;
+    color: #FFFFFF;
+}
+
+QCalendarWidget QTableView {
+    selection-background-color: #00E5FF;
+    selection-color: black;
+    background-color: transparent;
+    color: #FFFFFF;
+}
+
+QCalendarWidget QToolButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    color: #00E5FF;
+}
+
+QCalendarWidget QAbstractItemView:enabled {
+    color: #FFFFFF;
+    selection-background-color: #00E5FF;
+    selection-color: black;
+    background-color: transparent;
+}
+
+QCalendarWidget#agendaCalendar {
+    background-color: transparent;
+    border: none;
+    border-radius: 16px;
+}
+
+QCalendarWidget#agendaCalendar QWidget {
+    background-color: transparent;
+}
+
+#agendaContentCard {
+    background-color: #111111;
+    border: 1px solid #1A1A1A;
 }
 
 /* ========================================================================
@@ -197,7 +268,6 @@ QLabel[class="StatusBadge"] {
 }
 
 QTableWidget[class="ModernTable"] {
-    gridline-color: transparent;
     background-color: #0A0A0A;
     border: none;
 }

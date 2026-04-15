@@ -10,6 +10,7 @@ import qtawesome as qta # Asegúrate de tenerlo instalado: pip install qtawesome
 from views.instagram_accounts_page import InstagramAccountsPage
 from views.home_page import HomePage
 from views.sales_page import SalesPage
+from views.agenda_page import AgendaPage
 from views.log_dialog import LogDialog
 from controllers.instagram_controller import InstagramController
 from controllers.main_controller import MainController
@@ -87,11 +88,13 @@ class MainWindow(QMainWindow):
 
         self.accounts_page = InstagramAccountsPage(self.insta_controller, main_window=self)
         self.insta_controller.set_view(self.accounts_page, self.current_cliente_id)
+        self.agenda_page = AgendaPage(db_service=self.db_service, parent=self)
 
         # Añadir al stack
         self.pages_container.addWidget(self.home_page)      # Índice 0
         self.pages_container.addWidget(self.accounts_page)  # Índice 1
-        self.pages_container.addWidget(self.sales_page)    # Índice 2
+        self.pages_container.addWidget(self.sales_page)     # Índice 2
+        self.pages_container.addWidget(self.agenda_page)    # Índice 3
 
         self.pages_container.currentChanged.connect(self.on_page_changed)
 
@@ -196,6 +199,14 @@ class MainWindow(QMainWindow):
         self.btn_orders.clicked.connect(lambda: self.show_page(2))
         self.sidebar_layout.addWidget(self.btn_orders)
 
+        icon_agenda = qta.icon('fa5s.calendar', color='#e0e0e0')
+        self.btn_agenda = QPushButton(icon_agenda, "  Agenda")
+        self.btn_agenda.setIconSize(QSize(18, 18))
+        self.btn_agenda.setFixedHeight(45)
+        self.btn_agenda.setCheckable(True)
+        self.btn_agenda.clicked.connect(lambda: self.show_page(3))
+        self.sidebar_layout.addWidget(self.btn_agenda)
+
         icon_logs = qta.icon('fa5s.stream', color='#e0e0e0')
         self.btn_logs = QPushButton(icon_logs, "  Logs")
         self.btn_logs.setIconSize(QSize(18, 18))
@@ -207,13 +218,21 @@ class MainWindow(QMainWindow):
 
         self.btn_home.setCheckable(True)
         self.btn_accounts.setCheckable(True)
+        self.btn_orders.setCheckable(True)
+        self.btn_agenda.setCheckable(True)
         self.btn_home.setChecked(True)
         self.btn_home.setProperty("active", True)
         self.btn_accounts.setProperty("active", False)
+        self.btn_orders.setProperty("active", False)
+        self.btn_agenda.setProperty("active", False)
         self.btn_home.style().unpolish(self.btn_home)
         self.btn_home.style().polish(self.btn_home)
         self.btn_accounts.style().unpolish(self.btn_accounts)
         self.btn_accounts.style().polish(self.btn_accounts)
+        self.btn_orders.style().unpolish(self.btn_orders)
+        self.btn_orders.style().polish(self.btn_orders)
+        self.btn_agenda.style().unpolish(self.btn_agenda)
+        self.btn_agenda.style().polish(self.btn_agenda)
 
         # IMPORTANTE: Añadir el sidebar al layout principal
         self.layout_principal.addWidget(self.sidebar)
@@ -244,6 +263,8 @@ class MainWindow(QMainWindow):
             self.accounts_page.controller.refresh(self.current_cliente_id)
         if index == 2 and hasattr(self, 'sales_page'):
             self.sales_page.refresh_pending_orders()
+        if index == 3 and hasattr(self, 'agenda_page'):
+            self.agenda_page.load_citas()
         self.pages_container.setCurrentIndex(index)
 
     def append_log_message(self, message):
@@ -254,15 +275,19 @@ class MainWindow(QMainWindow):
         self.btn_home.setChecked(index == 0)
         self.btn_accounts.setChecked(index == 1)
         self.btn_orders.setChecked(index == 2)
+        self.btn_agenda.setChecked(index == 3)
         self.btn_home.setProperty("active", index == 0)
         self.btn_accounts.setProperty("active", index == 1)
         self.btn_orders.setProperty("active", index == 2)
+        self.btn_agenda.setProperty("active", index == 3)
         self.btn_home.style().unpolish(self.btn_home)
         self.btn_home.style().polish(self.btn_home)
         self.btn_accounts.style().unpolish(self.btn_accounts)
         self.btn_accounts.style().polish(self.btn_accounts)
         self.btn_orders.style().unpolish(self.btn_orders)
         self.btn_orders.style().polish(self.btn_orders)
+        self.btn_agenda.style().unpolish(self.btn_agenda)
+        self.btn_agenda.style().polish(self.btn_agenda)
 
 
 class SecurityGate(QDialog):

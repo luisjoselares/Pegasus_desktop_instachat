@@ -179,6 +179,18 @@ class LocalDBService:
                 )
             """)
 
+            # Tabla de Agenda / Citas
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS citas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente_nombre TEXT NOT NULL,
+                    fecha_hora TEXT NOT NULL,
+                    servicio TEXT,
+                    estado TEXT DEFAULT 'Pendiente',
+                    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             # 6. Tabla de Citas / Appointments
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS appointments (
@@ -878,6 +890,32 @@ class LocalDBService:
             )
             conn.commit()
             return cursor.lastrowid
+
+    def insert_cita(self, cliente_nombre, fecha_hora, servicio, estado='Pendiente'):
+        """Inserta una nueva cita en la agenda. fecha_hora debe estar en formato 'YYYY-MM-DD HH:MM'"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO citas (cliente_nombre, fecha_hora, servicio, estado) VALUES (?, ?, ?, ?)",
+                (cliente_nombre, fecha_hora, servicio, estado)
+            )
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_upcoming_citas(self):
+        """Obtiene las citas ordenadas por fecha."""
+        with self.get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM citas ORDER BY fecha_hora ASC")
+            return [dict(row) for row in cursor.fetchall()]
+
+    def update_cita_status(self, cita_id, nuevo_estado):
+        """Actualiza el estado de una cita (Ej: Confirmada, Cancelada, Completada)."""
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE citas SET estado = ? WHERE id = ?",
+                (nuevo_estado, cita_id)
+            )
+            conn.commit()
 
     def get_pending_orders(self):
         with self.get_connection() as conn:
