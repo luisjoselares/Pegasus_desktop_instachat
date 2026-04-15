@@ -4,6 +4,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor
 
+from views.components import PegasusCard, PegasusPrimaryButton
+
 class HomePage(QWidget):
     def __init__(self, main_window_ref, parent=None):
         super().__init__(parent)
@@ -129,18 +131,7 @@ class HomePage(QWidget):
         main_layout.addWidget(scroll)
 
     def _create_card(self, icon_str, title, desc):
-        card = QFrame()
-        card.setStyleSheet("""
-            QFrame {
-                background-color: #0B0B0B;
-                border: 1px solid #1A1A1A;
-                border-radius: 16px;
-            }
-            QFrame:hover {
-                border: 1px solid #333333;
-                background-color: #111111;
-            }
-        """)
+        card = PegasusCard()
         c_layout = QVBoxLayout(card)
         c_layout.setContentsMargins(20, 25, 20, 25)
         c_layout.setSpacing(12)

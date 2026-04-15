@@ -1,7 +1,9 @@
+import qtawesome as qta
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QMessageBox, QAbstractItemView)
 from services.security_service import SecurityService
+from views.components import PegasusPrimaryButton
 from services.database_service import LocalDBService
 from views.dialogs.alerts_dialog import AlertsDialog
 from PyQt6.QtCore import Qt
@@ -88,8 +90,32 @@ class AccountsPage(QWidget):
         self.tabla.setAlternatingRowColors(True)
         self.tabla.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tabla.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+
+        self.empty_state_container = QWidget()
+        self.empty_state_container.setObjectName("emptyStateContainer")
+        empty_layout = QVBoxLayout(self.empty_state_container)
+        empty_layout.setContentsMargins(0, 60, 0, 60)
+        empty_layout.setSpacing(18)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        icon_label = QLabel()
+        icon_label.setPixmap(qta.icon('fa5s.inbox', color='rgba(255,255,255,0.30)').pixmap(72, 72))
+        icon_label.setStyleSheet("background: transparent; border: none;")
+        empty_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        empty_text = QLabel("Aún no hay cuentas registradas")
+        empty_text.setStyleSheet("color: #B0B0B0; font-size: 18px; font-weight: 700;")
+        empty_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(empty_text)
+
+        self.empty_action_btn = PegasusPrimaryButton("Añadir Cuenta")
+        self.empty_action_btn.clicked.connect(self.open_add_dialog)
+        self.empty_action_btn.setFixedWidth(180)
+        empty_layout.addWidget(self.empty_action_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        layout.addWidget(self.empty_state_container)
         layout.addWidget(self.tabla)
-        
+
         self.cargar_tabla()
 
     def guardar_cuenta(self):
@@ -126,6 +152,13 @@ class AccountsPage(QWidget):
         cuentas = self.db.obtener_cuentas()
         self.account_ids = []
         self.tabla.setRowCount(len(cuentas))
+
+        if len(cuentas) > 0:
+            self.empty_state_container.hide()
+            self.tabla.show()
+        else:
+            self.empty_state_container.show()
+            self.tabla.hide()
         
         for i, cuenta in enumerate(cuentas):
             id_c = cuenta.get('id')

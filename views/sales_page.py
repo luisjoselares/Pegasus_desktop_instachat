@@ -44,11 +44,10 @@ class SalesPage(QWidget):
 
         # --- SPLITTER (MASTER-DETAIL) ---
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setStyleSheet("QSplitter::handle { background-color: transparent; }")
         
         # LADO IZQUIERDO: Tabla de Pagos
         left_panel = QFrame()
-        left_panel.setStyleSheet("background-color: #0B0B0B; border: 1px solid #1A1A1A; border-radius: 12px;")
+        left_panel.setObjectName("salesPanelLeft")
         left_layout = QVBoxLayout(left_panel)
         
         lbl_table = QLabel("Transacciones Recientes")
@@ -56,14 +55,9 @@ class SalesPage(QWidget):
         left_layout.addWidget(lbl_table)
 
         self.table = QTableWidget(0, 4)
+        self.table.setObjectName("pegasusTable")
         self.table.setHorizontalHeaderLabels(["ID", "Cliente", "Monto", "Estado"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: transparent; border: none; color: #E0E0E0; gridline-color: #1A1A1A; }
-            QHeaderView::section { background-color: #111111; color: #777777; font-weight: bold; border: none; padding: 10px; border-bottom: 1px solid #1A1A1A;}
-            QTableWidget::item { padding: 10px; border-bottom: 1px solid #161616; }
-            QTableWidget::item:selected { background-color: rgba(0, 229, 255, 0.1); color: #00E5FF; }
-        """)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_transaction_selected)
@@ -71,7 +65,7 @@ class SalesPage(QWidget):
 
         # LADO DERECHO: Detalles y Acciones
         self.right_panel = QFrame()
-        self.right_panel.setStyleSheet("background-color: #0D0D0D; border: 1px solid #1A1A1A; border-radius: 12px;")
+        self.right_panel.setObjectName("salesPanelRight")
         self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(20, 20, 20, 20)
         
@@ -95,9 +89,9 @@ class SalesPage(QWidget):
         
         btn_row = QHBoxLayout()
         btn_approve = QPushButton("Aprobar Pago")
-        btn_approve.setStyleSheet("background-color: #00E5FF; color: #000; font-weight: bold; padding: 10px; border-radius: 6px;")
+        btn_approve.setObjectName("primaryButton")
         btn_reject = QPushButton("Rechazar")
-        btn_reject.setStyleSheet("background-color: transparent; color: #FF5555; border: 1px solid #FF5555; font-weight: bold; padding: 10px; border-radius: 6px;")
+        btn_reject.setObjectName("dangerButton")
         btn_row.addWidget(btn_reject)
         btn_row.addWidget(btn_approve)
         
@@ -113,7 +107,7 @@ class SalesPage(QWidget):
 
     def _create_kpi_card(self, title, value, icon_str, color):
         card = QFrame()
-        card.setStyleSheet(f"background-color: #0B0B0B; border: 1px solid #1A1A1A; border-radius: 12px; border-top: 3px solid {color};")
+        card.setObjectName("kpiCard")
         layout = QHBoxLayout(card)
         layout.setContentsMargins(20, 20, 20, 20)
         
